@@ -1,0 +1,1589 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>OSM Bus 3D</title>
+<style>
+:root{--bg:rgba(14,20,30,.82);--ac:#4aa3ff;--tx:#e8eef7}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#9ecbf0;font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--tx);touch-action:none;user-select:none;-webkit-user-select:none}
+canvas#view{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.panel{position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));width:min(350px,calc(100vw - 20px));max-height:calc(100% - 20px);overflow:auto;background:var(--bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:14px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,.35);touch-action:pan-y}
+.panel h1{font-size:15px;margin:0;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#9fb4cc;margin:12px 0 6px}
+.row{display:flex;gap:6px;margin:6px 0;align-items:center;flex-wrap:wrap}
+input[type=text],select{flex:1;min-width:0;background:#0b121c;color:var(--tx);border:1px solid #2c3d52;border-radius:8px;padding:8px 9px;font-size:14px;user-select:text;-webkit-user-select:text}
+button,.btn{background:#1f3550;color:var(--tx);border:1px solid #35557a;border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;touch-action:manipulation}
+button:hover,.btn:hover{background:#27456a}
+button.pri{background:var(--ac);border-color:var(--ac);color:#04121f;font-weight:600}
+label{display:flex;align-items:center;gap:6px;font-size:13px}
+input[type=range]{flex:1;min-width:80px}
+.small{font-size:12px;color:#9fb4cc}
+#status{font-size:12px;margin-top:6px;color:#ffd48a;min-height:16px}
+#hud{position:fixed;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--bg);border-radius:12px;padding:6px 14px;text-align:center;pointer-events:none;min-width:200px}
+#hud b{font-size:24px}
+#hud div{font-size:12px;color:#b8c8dc}
+#stopname{color:#ffd48a}
+#touch{position:fixed;inset:0;pointer-events:none;display:none}
+.tb{pointer-events:auto;position:absolute;width:72px;height:72px;border-radius:50%;font-size:28px;padding:0;background:rgba(20,32,48,.55);border:2px solid rgba(255,255,255,.35);color:#fff;touch-action:none;-webkit-user-select:none}
+.tb.on{background:rgba(74,163,255,.75)}
+.tb.sm{width:50px;height:50px;font-size:20px}
+#tl{left:max(14px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom))}
+#tr{left:calc(max(14px,env(safe-area-inset-left)) + 86px);bottom:max(20px,env(safe-area-inset-bottom))}
+#tg{right:max(14px,env(safe-area-inset-right));bottom:calc(max(20px,env(safe-area-inset-bottom)) + 84px);width:84px;height:84px}
+#tb{right:max(14px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));width:84px;height:70px;border-radius:36px}
+#tcam{right:calc(max(14px,env(safe-area-inset-right)) + 100px);bottom:calc(max(20px,env(safe-area-inset-bottom)) + 90px)}
+#thand{right:calc(max(14px,env(safe-area-inset-right)) + 100px);bottom:calc(max(20px,env(safe-area-inset-bottom)) + 34px)}
+#tturbo{right:calc(max(14px,env(safe-area-inset-right)) + 154px);bottom:calc(max(20px,env(safe-area-inset-bottom)) + 62px)}
+#fatal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#10161f;color:#fff;text-align:center;padding:20px;z-index:10}
+#where{position:fixed;left:50%;top:max(10px,env(safe-area-inset-top));transform:translateX(-50%);background:var(--bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:10px;padding:5px 14px;text-align:center;pointer-events:none;max-width:min(520px,calc(100vw - 400px));min-width:140px}
+#w1{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#w2{font-size:11px;color:#9fb4cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:13px}
+@media (max-width:760px){#where{left:auto;right:max(10px,env(safe-area-inset-right));transform:none;max-width:calc(100vw - 190px)}}
+.collapsed #pbody{display:none}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="panel" id="panel">
+  <h1><span>🚌 OSM Bus 3D</span><button id="ptoggle" title="Свернуть/развернуть">☰</button></h1>
+  <div id="pbody">
+    <h2>Телепорт</h2>
+    <div class="row">
+      <input type="text" id="coord" placeholder="55.7558, 37.6176 или название города" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="pri" id="go">Поехали</button>
+    </div>
+    <div class="row">
+      <select id="preset"></select>
+    </div>
+    <div class="small">Широта, долгота (можно вставить ссылку Google Maps) или название места.</div>
+    <div id="status"></div>
+
+    <h2>Модель автобуса</h2>
+    <div class="row">
+      <button id="dl">⬇ Скачать развёртку</button>
+      <label class="btn" style="display:inline-flex">⬆ Своя текстура<input type="file" id="file" accept="image/*" hidden></label>
+      <button id="reset">Сброс</button>
+    </div>
+    <div class="row"><span class="small">Прозрачность</span><input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></div>
+    <div class="small">Модель — просто коробка (6 граней). PNG с альфа-каналом поддерживается: прозрачные пиксели прозрачны в игре. Автобус 12 × 2.5 × 3 м без колёс. Пропорции развёртки 29:8 (например 2900×800 или 5800×1600).</div>
+
+    <h2>Настройки</h2>
+    <div class="row">
+      <label>Дальность загрузки
+        <select id="range" style="flex:none"><option value="1">1 (быстро)</option><option value="2">2 (дальше)</option></select>
+      </label>
+    </div>
+    <div class="row">
+      <label>Источник карты
+        <select id="src" style="flex:none"><option value="auto">Авто: OpenFreeMap → Overpass</option><option value="streets">streets.gl (эксперимент) → OpenFreeMap → Overpass</option><option value="vector">Только OpenFreeMap</option><option value="overpass">Только Overpass</option></select></label>
+    </div>
+    <div class="row"><input type="text" id="sgurl" value="https://tiles.streets.gl/vector/{z}/{x}/{y}" title="Шаблон адреса тайлов streets.gl" autocomplete="off" spellcheck="false"></div>
+    <div class="small">Адрес тайлов streets.gl можно поправить, если сервер изменится.</div>
+    <div class="row">
+      <label><input type="checkbox" id="enr" checked> Доп. детали из Overpass (светофоры, остановки, деревья)</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="coll" checked> Столкновения со зданиями</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="terr" checked> Рельеф</label>
+      <select id="smooth" style="flex:none" title="Сглаживание рельефа (убирает ложные холмы и ямы от домов и деревьев)"><option value="0">Сглаживание: слабое</option><option value="1">Сглаживание: среднее</option><option value="2" selected>Сглаживание: сильное</option><option value="3">Сглаживание: максимум</option></select>
+      <select id="exag" style="flex:none" title="Усиление высот"><option value="1">×1 (реальный)</option><option value="1.5">×1.5</option><option value="2">×2</option><option value="3">×3</option></select>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="sat" checked> Спутниковые снимки вместо травы</label>
+    </div>
+    <div class="row"><input type="text" id="saturl" value="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" title="Шаблон адреса снимков" autocomplete="off" spellcheck="false"></div>
+    <div class="small">Снимки: Esri World Imagery (Maxar, Earthstar Geographics и др.), действуют условия Esri.</div>
+    <h2>Время суток</h2>
+    <div class="row"><input type="range" id="tod" min="0" max="24" step="0.01" value="12"><span id="todl" class="small" style="min-width:42px;text-align:right">12:00</span></div>
+    <div class="row">
+      <label>Месяц <select id="mon" style="flex:none"><option value="0">Январь</option><option value="1">Февраль</option><option value="2">Март</option><option value="3">Апрель</option><option value="4">Май</option><option value="5">Июнь</option><option value="6">Июль</option><option value="7">Август</option><option value="8">Сентябрь</option><option value="9">Октябрь</option><option value="10">Ноябрь</option><option value="11">Декабрь</option></select></label>
+      <span id="sunalt" class="small"></span>
+    </div>
+    <div class="row">
+      <label>Ход времени <select id="tspd" style="flex:none"><option value="0">Стоп</option><option value="1">×1 (реальный)</option><option value="60" selected>×60</option><option value="300">×300</option><option value="1200">×1200</option></select></label>
+      <label><input type="checkbox" id="shad"> Тени</label>
+    </div>
+    <div class="row">
+      <button id="night">🌙 День/ночь</button>
+      <button id="cam">🎥 Камера</button>
+      <label><input type="checkbox" id="showtouch"> Сенсорные кнопки</label>
+    </div>
+
+    <h2>Управление</h2>
+    <div class="small">W/S или ↑/↓ — газ/тормоз/назад · A/D или ←/→ — руль · Пробел — ручник · Shift — турбо · C — камера · N — день/ночь · мышь/палец — вращать камеру, колесо/щипок — зум.</div>
+    <div class="small" style="margin-top:6px">Данные карты © участники OpenStreetMap (векторные тайлы OpenFreeMap / OpenMapTiles, Overpass API).</div>
+  </div>
+</div>
+
+<div id="where"><div id="w1">—</div><div id="w2"></div></div>
+
+<div id="hud">
+  <div><b id="speed">0</b> км/ч</div>
+  <div id="pos">—</div>
+  <div id="stopname"></div>
+</div>
+
+<div id="touch">
+  <button class="tb" id="tl" data-k="left">◀</button>
+  <button class="tb" id="tr" data-k="right">▶</button>
+  <button class="tb" id="tg" data-k="gas">▲</button>
+  <button class="tb" id="tb" data-k="brake">▼</button>
+  <button class="tb sm" id="tcam" data-k="cam">🎥</button>
+  <button class="tb sm" id="thand" data-k="hand">🅿</button>
+  <button class="tb sm" id="tturbo" data-k="turbo">⚡</button>
+</div>
+
+<div id="fatal"><div><h2>Не удалось загрузить three.js</h2><p>Для работы нужен доступ к cdnjs.cloudflare.com и к серверам OpenStreetMap (Overpass).</p></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id);
+if(typeof THREE==='undefined'){ $('fatal').style.display='flex'; return; }
+
+/* =====================  КОНСТАНТЫ / ПРОЕКЦИЯ  ===================== */
+const S=500;                 // размер тайла, м
+const CS=32;                 // размер ячейки пространственной сетки
+const ENDPOINTS=[
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter'
+];
+const PRESETS=[
+  ['— быстрый выбор города —',''],
+  ['Москва',[55.7558,37.6176]],['Санкт-Петербург',[59.9343,30.3351]],['Минск',[53.9006,27.5590]],
+  ['Амстердам',[52.3731,4.8922]],['Лондон',[51.5074,-0.1278]],['Париж',[48.8566,2.3522]],
+  ['Берлин',[52.5200,13.4050]],['Рим',[41.9028,12.4964]],['Стамбул',[41.0082,28.9784]],
+  ['Нью-Йорк',[40.7580,-73.9855]],['Токио',[35.6762,139.6503]],['Дубай',[25.1972,55.2744]],['Сидней',[-33.8688,151.2093]]
+];
+let lat0=55.7558, lon0=37.6176, kx=111320*Math.cos(lat0*Math.PI/180), kz=111132;
+function setOrigin(la,lo){ lat0=la; lon0=lo; kx=111320*Math.cos(la*Math.PI/180); kz=111132; }
+const proj=(lat,lon)=>[(lon-lon0)*kx, -(lat-lat0)*kz];
+const unproj=(x,z)=>[lat0-z/kz, lon0+x/kx];
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const hexc=h=>[(h>>16&255)/255,(h>>8&255)/255,(h&255)/255];
+
+/* =====================  МИНИ-БИЛДЕР ГЕОМЕТРИИ  ===================== */
+class MB{
+  constructor(uv,us){this.p=[];this.n=[];this.c=[];this.u=uv?[]:null;this.us=us||0.2;}
+  tri(a,b,c,col,o,ua,ub,uc){
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l=Math.hypot(nx,ny,nz); if(l<1e-10) return;
+    nx/=l;ny/=l;nz/=l;
+    if(this.u&&!ua){ const k=this.us;
+      if(Math.abs(ny)>0.6){ ua=[a[0]*k,a[2]*k];ub=[b[0]*k,b[2]*k];uc=[c[0]*k,c[2]*k]; }
+      else { ua=[(a[0]+a[2])*k,a[1]*k];ub=[(b[0]+b[2])*k,b[1]*k];uc=[(c[0]+c[2])*k,c[1]*k]; } }
+    let flip=false;
+    if(o){
+      if(o.up) flip=ny<0;
+      else if(o.nrm) flip=(nx*o.nrm[0]+ny*o.nrm[1]+nz*o.nrm[2])<0;
+      else if(o.ctr){ const mx=(a[0]+b[0]+c[0])/3-o.ctr[0],my=(a[1]+b[1]+c[1])/3-o.ctr[1],mz=(a[2]+b[2]+c[2])/3-o.ctr[2]; flip=(nx*mx+ny*my+nz*mz)<0; }
+      else if(o.axis){ const mx=(a[0]+b[0]+c[0])/3-o.axis[0],mz=(a[2]+b[2]+c[2])/3-o.axis[1]; flip=(nx*mx+nz*mz)<0; }
+    }
+    if(flip){ const t=b;b=c;c=t; const tu=ub;ub=uc;uc=tu; nx=-nx;ny=-ny;nz=-nz; }
+    this.p.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);
+    this.n.push(nx,ny,nz,nx,ny,nz,nx,ny,nz);
+    this.c.push(col[0],col[1],col[2],col[0],col[1],col[2],col[0],col[1],col[2]);
+    if(this.u){ ua=ua||[0,0];ub=ub||[0,0];uc=uc||[0,0]; this.u.push(ua[0],ua[1],ub[0],ub[1],uc[0],uc[1]); }
+  }
+  quad(a,b,c,d,col,o,ua,ub,uc,ud){ this.tri(a,b,c,col,o,ua,ub,uc); this.tri(a,c,d,col,o,ua,uc,ud); }
+  mesh(mat){
+    if(!this.p.length) return null;
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(this.p,3));
+    g.setAttribute('normal',new THREE.Float32BufferAttribute(this.n,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(this.c,3));
+    if(this.u) g.setAttribute('uv',new THREE.Float32BufferAttribute(this.u,2));
+    g.computeBoundingSphere();
+    return new THREE.Mesh(g,mat);
+  }
+}
+const UP={up:true};
+function addBox(mb,cx,y0,cz,sx,sy,sz,col,rot){
+  rot=rot||0; const c=Math.cos(rot),s=Math.sin(rot),P=[];
+  for(let i=0;i<8;i++){
+    const lx=((i>>2)&1?.5:-.5)*sx, y=y0+((i>>1)&1?sy:0), lz=((i&1)?.5:-.5)*sz;
+    P.push([cx+lx*c+lz*s, y, cz-lx*s+lz*c]);
+  }
+  const o={ctr:[cx,y0+sy/2,cz]};
+  for(const f of [[0,1,3,2],[4,5,7,6],[0,1,5,4],[2,3,7,6],[0,2,6,4],[1,3,7,5]]) mb.quad(P[f[0]],P[f[1]],P[f[2]],P[f[3]],col,o);
+}
+function addCone(mb,x,y,z,r,h,seg,col,inv){
+  const ring=[]; const yb=inv?y+h:y, ya=inv?y:y+h;
+  for(let k=0;k<seg;k++){const a=k/seg*Math.PI*2; ring.push([x+Math.cos(a)*r,yb,z+Math.sin(a)*r]);}
+  const apex=[x,ya,z];
+  for(let k=0;k<seg;k++) mb.tri(apex,ring[k],ring[(k+1)%seg],col,{axis:[x,z]});
+}
+const ICO=(()=>{ const t=(1+Math.sqrt(5))/2;
+  const v=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(a=>{ const l=Math.hypot(a[0],a[1],a[2]); return [a[0]/l,a[1]/l,a[2]/l]; });
+  const f=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  return {v,f}; })();
+function addBlob(mb,cx,cy,cz,rx,ry,rz,col,rng,jit){
+  const P=ICO.v.map(a=>{ const j=1+(rng()-.5)*jit; return [cx+a[0]*rx*j,cy+a[1]*ry*j,cz+a[2]*rz*j]; });
+  for(const f of ICO.f){
+    const a=P[f[0]],b=P[f[1]],c=P[f[2]], my=((a[1]+b[1]+c[1])/3-(cy-ry))/(2*ry), k=0.55+0.55*my+(rng()-.5)*0.16;
+    mb.tri(a,b,c,[col[0]*k,col[1]*k,col[2]*k],{ctr:[cx,cy,cz]});
+  }
+}
+function addPine(mb,x,y0,z,r,h,seg,col,rng){
+  const ring=[]; for(let k=0;k<seg;k++){ const a=k/seg*Math.PI*2, rr=r*(0.86+rng()*0.26); ring.push([x+Math.cos(a)*rr,y0,z+Math.sin(a)*rr]); }
+  const apex=[x+(rng()-.5)*0.3,y0+h,z+(rng()-.5)*0.3];
+  for(let k=0;k<seg;k++){ const q=0.62+0.4*rng(); mb.tri(apex,ring[k],ring[(k+1)%seg],[col[0]*q,col[1]*q,col[2]*q],{axis:[x,z]}); }
+}
+const GREENS=[[.21,.33,.13],[.27,.38,.16],[.33,.42,.17],[.23,.34,.19],[.30,.37,.14]];
+function addTree(vc,fo,x,z,rng){
+  const kind=rng(), s=0.75+rng()*0.75, y0=th(x,z)-0.1;
+  if(kind<0.16){ const g=GREENS[(rng()*GREENS.length)|0]; addBlob(fo,x,y0+0.55*s,z,0.95*s,0.7*s,0.95*s,g,rng,0.4); return; }
+  if(kind<0.42){
+    const th2=1.7*s; addBox(vc,x,y0,z,0.3*s,th2+1.2,0.3*s,[.25,.19,.14],rng()*3);
+    const c=[.08+rng()*.04,.21+rng()*.07,.11+rng()*.04]; let y=y0+th2*0.6, r=2.1*s;
+    for(let k=0;k<4;k++){ addPine(fo,x,y,z,r,2.7*s,8,c,rng); y+=1.45*s; r*=0.74; }
+    return;
+  }
+  const th2=2.3*s+rng()*1.1*s; addBox(vc,x,y0,z,0.34*s,th2,0.34*s,[.27+rng()*.05,.20,.14],rng()*3);
+  let base=GREENS[(rng()*GREENS.length)|0]; if(rng()<0.07) base=[.58,.44,.14];
+  const n=3+((rng()*2)|0);
+  for(let k=0;k<n;k++){
+    const a=rng()*6.283, d=rng()*1.1*s, v=0.85+rng()*0.3;
+    addBlob(fo,x+Math.cos(a)*d,y0+th2+0.5*s+rng()*1.7*s,z+Math.sin(a)*d,(1.5+rng()*0.9)*s,(1.25+rng()*0.7)*s,(1.5+rng()*0.9)*s,[base[0]*v,base[1]*v,base[2]*v],rng,0.32);
+  }
+}
+
+/* =====================  ГЕОМЕТРИЧЕСКИЕ УТИЛИТЫ  ===================== */
+function pip(x,z,p){ let r=false; for(let i=0,j=p.length-1;i<p.length;j=i++){ const a=p[i],b=p[j]; if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0]) r=!r; } return r; }
+function closestOnSeg(x,z,s){ const dx=s.x2-s.x1,dz=s.z2-s.z1,l2=dx*dx+dz*dz||1e-9; let t=((x-s.x1)*dx+(z-s.z1)*dz)/l2; t=t<0?0:t>1?1:t; return [s.x1+dx*t,s.z1+dz*t,t]; }
+function cleanPts(a){ const r=[]; for(const p of a){ const q=r[r.length-1]; if(!q||Math.hypot(p[0]-q[0],p[1]-q[1])>0.05) r.push(p);} return r; }
+function ribbon(mb,pts,w,y,col){
+  pts=cleanPts(pts); const n=pts.length; if(n<2) return null;
+  const dir=[]; for(let i=0;i<n-1;i++){ const dx=pts[i+1][0]-pts[i][0],dz=pts[i+1][1]-pts[i][1],l=Math.hypot(dx,dz)||1; dir.push([dx/l,dz/l]); }
+  const L=[],R=[];
+  for(let i=0;i<n;i++){
+    const A=dir[i>0?i-1:0],B=dir[i<n-1?i:n-2];
+    const ax=-A[1],az=A[0],bx=-B[1],bz=B[0];
+    let mx=ax+bx,mz=az+bz,ml=Math.hypot(mx,mz);
+    if(ml<1e-3){mx=bx;mz=bz;} else {mx/=ml;mz/=ml;}
+    const s=1/Math.max(mx*bx+mz*bz,0.5), h=w/2*s, yy=y+(pts[i][2]||0);
+    L.push([pts[i][0]+mx*h,yy,pts[i][1]+mz*h]); R.push([pts[i][0]-mx*h,yy,pts[i][1]-mz*h]);
+  }
+  for(let i=0;i<n-1;i++) mb.quad(L[i],R[i],R[i+1],L[i+1],col,UP);
+  return {L,R};
+}
+function offsetLine(pts,d){
+  pts=cleanPts(pts); const n=pts.length, dir=[];
+  for(let i=0;i<n-1;i++){ const dx=pts[i+1][0]-pts[i][0],dz=pts[i+1][1]-pts[i][1],l=Math.hypot(dx,dz)||1; dir.push([dx/l,dz/l]); }
+  const o=[];
+  for(let i=0;i<n;i++){
+    const A=dir[i>0?i-1:0],B=dir[i<n-1?i:n-2]; let mx=-A[1]-B[1],mz=A[0]+B[0],ml=Math.hypot(mx,mz);
+    if(ml<1e-3){mx=-B[1];mz=B[0];} else {mx/=ml;mz/=ml;}
+    const sc=1/Math.max(mx*-B[1]+mz*B[0],0.5);
+    o.push([pts[i][0]+mx*d*sc,pts[i][1]+mz*d*sc,pts[i][2]||0]);
+  }
+  return o;
+}
+function densify(pts,step){
+  const o=[[pts[0][0],pts[0][1]]];
+  for(let i=1;i<pts.length;i++){ const a=pts[i-1],b=pts[i],l=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.ceil(l/step)); for(let k=1;k<=n;k++) o.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n]); }
+  return o;
+}
+// профиль моста: плавный подъём от земли до высоты H; на краях, обрезанных границей тайла, подъёма нет
+function groundLine(pts,step){ const P=densify(pts,step); for(const q of P) q.push(th(q[0],q[1])); return P; }
+function bridgeProfile(pts,cutEnds,Hfix){
+  const P=densify(pts,6); let L=0; const sm=[0];
+  for(let i=1;i<P.length;i++){ L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]); sm.push(L); }
+  const c0=!!(cutEnds&&cutEnds[0]), c1=!!(cutEnds&&cutEnds[1]);
+  const H=(c0||c1)?Hfix:Math.min(Hfix,0.075*L+0.4), rl=H/0.14;
+  const t0=th(P[0][0],P[0][1]), t1=th(P[P.length-1][0],P[P.length-1][1]);
+  for(let i=0;i<P.length;i++){ const d=Math.min(c0?1e9:sm[i],c1?1e9:L-sm[i]), r=Math.min(1,d/rl); P[i]=[P[i][0],P[i][1],t0+(t1-t0)*sm[i]/(L||1)+H*r*r*(3-2*r)]; }
+  return P;
+}
+const BRH={motorway:8,motorway_link:7,trunk:8,trunk_link:7,primary:6.5,primary_link:6,secondary:6.5,secondary_link:6,tertiary:6,tertiary_link:6,residential:5.5,service:5,pedestrian:4.5,footway:4.5,cycleway:4.5,track:4.5,unclassified:5.5,living_street:5.5,path:4.5};
+function vq(mb,a,b,c,d,col){ mb.quad(a,b,c,d,col); mb.quad(d,c,b,a,col); }
+function bridgeBody(mb,e,col,rail){
+  const L=e.L,R=e.R,T=0.9, dn=p=>[p[0],p[1]-T,p[2]], up=p=>[p[0],p[1]+0.9,p[2]];
+  for(let i=0;i<L.length-1;i++){
+    for(const E of [L,R]){ vq(mb,E[i],E[i+1],dn(E[i+1]),dn(E[i]),col); vq(mb,E[i],E[i+1],up(E[i+1]),up(E[i]),rail); }
+    mb.quad(dn(L[i]),dn(R[i]),dn(R[i+1]),dn(L[i+1]),col,{nrm:[0,-1,0]});
+  }
+}
+function bridgePillars(mb,pts,w,id,inT){
+  let carry=8;
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<0.1) continue;
+    const ux=dx/len,uz=dz/len; let t=carry;
+    for(;t<len;t+=24){
+      const f=t/len, x=a[0]+dx*f, z=a[1]+dz*f, h=(a[2]||0)+((b[2]||0)-(a[2]||0))*f, gh=th(x,z);
+      if(h-gh>2.5&&inT(x,z)&&!nearRoad(x,z,2.5,id)) addBox(mb,x,gh-0.3,z,Math.min(w*0.5,5),h-0.9-(gh-0.3),1.3,[.56,.55,.52],Math.atan2(ux,uz));
+    }
+    carry=t-len;
+  }
+}
+function sleepers(mb,run){
+  let carry=0;
+  for(let i=0;i<run.length-1;i++){
+    const a=run[i],b=run[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<0.05) continue;
+    const ux=dx/len,uz=dz/len,nx=-uz,nz=ux; let t=carry;
+    for(;t<len;t+=0.9){
+      const x=a[0]+ux*t,z=a[1]+uz*t,y=0.12+(a[2]||0)+((b[2]||0)-(a[2]||0))*t/len;
+      mb.quad([x-nx*1.3-ux*.13,y,z-nz*1.3-uz*.13],[x+nx*1.3-ux*.13,y,z+nz*1.3-uz*.13],[x+nx*1.3+ux*.13,y,z+nz*1.3+uz*.13],[x-nx*1.3+ux*.13,y,z-nz*1.3+uz*.13],[.27,.22,.18],UP);
+    }
+    carry=t-len;
+  }
+}
+function fillPoly(mb,pts,y,col){
+  const p=pts.slice(); if(p.length>1&&p[0][0]===p[p.length-1][0]&&p[0][1]===p[p.length-1][1]) p.pop();
+  if(p.length<3) return false;
+  let faces; try{ faces=THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(q[0],q[1])),[]); }catch(e){ return false; }
+  for(const f of faces) mb.tri([p[f[0]][0],y,p[f[0]][1]],[p[f[1]][0],y,p[f[1]][1]],[p[f[2]][0],y,p[f[2]][1]],col,UP);
+  return true;
+}
+
+/* =====================  ПРОСТРАНСТВЕННЫЕ СЕТКИ  ===================== */
+const roadGrid=new Map(), bldGrid=new Map(), nameGrid=new Map();
+function gAdd(grid,cx,cz,o,tile,set){ const k=cx+','+cz; let a=grid.get(k); if(!a){a=[];grid.set(k,a);} a.push(o); set.add(k); }
+function gRemove(grid,set,tk){ for(const k of set){ const a=grid.get(k); if(!a) continue; const na=a.filter(o=>o.tk!==tk); if(na.length) grid.set(k,na); else grid.delete(k);} }
+function addSeg(seg,tile){
+  const dx=seg.x2-seg.x1,dz=seg.z2-seg.z1,len=Math.hypot(dx,dz),n=Math.max(1,Math.ceil(len/CS*2)),seen=new Set();
+  for(let k=0;k<=n;k++){ const cx=Math.floor((seg.x1+dx*k/n)/CS),cz=Math.floor((seg.z1+dz*k/n)/CS),key=cx+','+cz; if(seen.has(key)) continue; seen.add(key); gAdd(roadGrid,cx,cz,seg,tile,tile.rc); }
+}
+function nearestSeg(x,z,r,excludeId){
+  let best=null,bd=r;
+  for(let cx=Math.floor((x-r)/CS);cx<=Math.floor((x+r)/CS);cx++)for(let cz=Math.floor((z-r)/CS);cz<=Math.floor((z+r)/CS);cz++){
+    const a=roadGrid.get(cx+','+cz); if(!a) continue;
+    for(const s of a){ if(excludeId&&s.id===excludeId) continue; const q=closestOnSeg(x,z,s),d=Math.hypot(q[0]-x,q[1]-z); if(d<bd){bd=d;best={seg:s,x:q[0],z:q[1],d,t:q[2]};} }
+  }
+  return best;
+}
+function nearRoad(x,z,margin,excludeId){
+  const r=12+margin;
+  for(let cx=Math.floor((x-r)/CS);cx<=Math.floor((x+r)/CS);cx++)for(let cz=Math.floor((z-r)/CS);cz<=Math.floor((z+r)/CS);cz++){
+    const a=roadGrid.get(cx+','+cz); if(!a) continue;
+    for(const s of a){ if(excludeId&&s.id===excludeId) continue; const q=closestOnSeg(x,z,s); if(Math.hypot(q[0]-x,q[1]-z)<s.hw+margin) return true; }
+  }
+  return false;
+}
+function addNameSeg(seg,tile){
+  const dx=seg.x2-seg.x1,dz=seg.z2-seg.z1,len=Math.hypot(dx,dz),n=Math.max(1,Math.ceil(len/CS*2)),seen=new Set();
+  for(let k=0;k<=n;k++){ const cx=Math.floor((seg.x1+dx*k/n)/CS),cz=Math.floor((seg.z1+dz*k/n)/CS),key=cx+','+cz; if(seen.has(key)) continue; seen.add(key); gAdd(nameGrid,cx,cz,seg,tile,tile.nc); }
+}
+function nearestName(x,z,r){
+  let best=null,bd=r;
+  for(let cx=Math.floor((x-r)/CS);cx<=Math.floor((x+r)/CS);cx++)for(let cz=Math.floor((z-r)/CS);cz<=Math.floor((z+r)/CS);cz++){
+    const a=nameGrid.get(cx+','+cz); if(!a) continue;
+    for(const sg of a){ const q=closestOnSeg(x,z,sg),d=Math.hypot(q[0]-x,q[1]-z); if(d<bd){bd=d;best=sg;} }
+  }
+  return best;
+}
+// высота дороги под точкой (мосты); выбирается ближайший к текущему уровню слой
+function groundAt(x,z,ref){
+  let best=null,bd=2.5; const r=12;
+  for(let cx=Math.floor((x-r)/CS);cx<=Math.floor((x+r)/CS);cx++)for(let cz=Math.floor((z-r)/CS);cz<=Math.floor((z+r)/CS);cz++){
+    const a=roadGrid.get(cx+','+cz); if(!a) continue;
+    for(const sg of a){
+      const q=closestOnSeg(x,z,sg); if(Math.hypot(q[0]-x,q[1]-z)>sg.hw+0.6) continue;
+      const h=(sg.h1||0)+((sg.h2||0)-(sg.h1||0))*q[2], dh=Math.abs(h-ref); if(dh<bd){bd=dh;best=h;}
+    }
+  }
+  return best===null?th(x,z):best;
+}
+function pointInBuilding(x,z){
+  const a=bldGrid.get(Math.floor(x/CS)+','+Math.floor(z/CS)); if(!a) return false;
+  for(const b of a){ if(x<b.minx||x>b.maxx||z<b.minz||z>b.maxz) continue; if(pip(x,z,b.p)) return true; }
+  return false;
+}
+
+/* =====================  ТЕКСТУРЫ  ===================== */
+function cv(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+function texFrom(c,aniso){ const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=aniso||4; return t; }
+function makeFacade(){
+  const W=512,H=256,c=cv(W,H),x=c.getContext('2d');
+  x.fillStyle='#e4e1d9'; x.fillRect(0,0,W,H);
+  for(let i=0;i<3200;i++){ const v=196+Math.random()*58|0; x.fillStyle='rgba('+v+','+(v-2)+','+(v-7)+',0.4)'; x.fillRect(Math.random()*W,Math.random()*H,1+Math.random()*3,1+Math.random()*3); }
+  for(let i=0;i<16;i++){ const g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,'rgba(55,50,45,0)'); g.addColorStop(1,'rgba(55,50,45,0.13)'); x.fillStyle=g; x.fillRect(Math.random()*W,0,2+Math.random()*7,H); }
+  x.fillStyle='rgba(0,0,0,0.12)'; x.fillRect(0,H-7,W,2); x.fillStyle='rgba(255,255,255,0.28)'; x.fillRect(0,H-5,W,4);
+  let k=0;
+  for(const cx of [128,384]){
+    const ww=112,wh=128,wx=cx-ww/2,wy=56;
+    x.fillStyle='rgba(0,0,0,0.30)'; x.fillRect(wx-6,wy-6,ww+12,wh+12);
+    x.fillStyle='#f3f1ea'; x.fillRect(wx-3,wy-3,ww+6,wh+6);
+    const g=x.createLinearGradient(wx,wy,wx+ww,wy+wh); g.addColorStop(0,'#a3bacb'); g.addColorStop(0.45,'#5b7388'); g.addColorStop(1,'#222d39');
+    x.fillStyle=g; x.fillRect(wx+4,wy+4,ww-8,wh-8);
+    x.fillStyle='rgba(255,255,255,0.17)'; x.beginPath(); x.moveTo(wx+4,wy+4); x.lineTo(wx+ww*0.55,wy+4); x.lineTo(wx+4,wy+wh*0.62); x.fill();
+    if(k===1){ x.fillStyle='rgba(236,226,200,0.78)'; x.fillRect(wx+4,wy+4,ww*0.46,wh*0.72); }
+    x.fillStyle='#f3f1ea'; x.fillRect(cx-2,wy+4,4,wh-8); x.fillRect(wx+4,wy+wh*0.3,ww-8,4);
+    x.fillStyle='#cdc8bd'; x.fillRect(wx-10,wy+wh+3,ww+20,7); x.fillStyle='rgba(0,0,0,0.28)'; x.fillRect(wx-10,wy+wh+10,ww+20,3);
+    k++;
+  }
+  const t=texFrom(c,8); return t;
+}
+function makeNoise(size,lo,blots){
+  const c=cv(size,size),x=c.getContext('2d');
+  x.fillStyle='rgb(238,238,238)'; x.fillRect(0,0,size,size);
+  for(let i=0;i<size*size/18;i++){ const v=lo+Math.random()*(255-lo)|0; x.fillStyle='rgba('+v+','+v+','+v+',0.55)'; x.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*2,1+Math.random()*2); }
+  for(let i=0;i<blots;i++){ const bx=Math.random()*size,by=Math.random()*size,r=size*(0.05+Math.random()*0.12), g=x.createRadialGradient(bx,by,0,bx,by,r); g.addColorStop(0,'rgba(120,120,120,0.16)'); g.addColorStop(1,'rgba(120,120,120,0)'); x.fillStyle=g; x.fillRect(bx-r,by-r,r*2,r*2); }
+  return texFrom(c,4);
+}
+function makeLeaf(){
+  const size=128,c=cv(size,size),x=c.getContext('2d');
+  x.fillStyle='rgb(170,170,170)'; x.fillRect(0,0,size,size);
+  for(let i=0;i<1100;i++){ const v=95+Math.random()*160|0, r=1+Math.random()*3.2; x.fillStyle='rgba('+v+','+v+','+v+',0.75)'; x.beginPath(); x.ellipse(Math.random()*size,Math.random()*size,r,r*0.6,Math.random()*3,0,6.283); x.fill(); }
+  for(let i=0;i<160;i++){ x.fillStyle='rgba(40,40,40,0.35)'; x.fillRect(Math.random()*size,Math.random()*size,2,2); }
+  return texFrom(c,4);
+}
+const detailTex=makeNoise(256,185,50), groundTex=makeNoise(256,190,70), leafTex=makeLeaf();
+groundTex.repeat.set(500,500);
+function makeLampTex(){
+  const c=document.createElement('canvas'); c.width=3;c.height=3; const x=c.getContext('2d');
+  const off=['#3a0d0d','#3a3000','#0a2a10'], on=['#ff2a2a','#ffd21a','#2aff5a'];
+  // столбец = состояние (0 красный, 1 зелёный, 2 жёлтый), строка = лампа (0 красная, 1 жёлтая, 2 зелёная)
+  for(let s=0;s<3;s++)for(let l=0;l<3;l++){ const act=(s===0&&l===0)||(s===2&&l===1)||(s===1&&l===2); x.fillStyle=act?on[l]:off[l]; x.fillRect(s,l,1,1); }
+  const t=new THREE.CanvasTexture(c); t.magFilter=t.minFilter=THREE.NearestFilter; t.generateMipmaps=false; t.wrapS=THREE.RepeatWrapping; t.repeat.set(1/3,1); return t;
+}
+const facadeTex=makeFacade();
+const lampBase=makeLampTex();
+const lampTexA=lampBase.clone(); lampTexA.needsUpdate=true; lampTexA.repeat.set(1/3,1);
+const lampTexB=lampBase.clone(); lampTexB.needsUpdate=true; lampTexB.repeat.set(1/3,1);
+const matVC=new THREE.MeshLambertMaterial({vertexColors:true,map:detailTex});
+const matFoliage=new THREE.MeshLambertMaterial({vertexColors:true,map:leafTex});
+function makeFacadeGlow(){
+  const W=512,H=256,c=cv(W,H),x=c.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,W,H);
+  const g=x.createLinearGradient(0,60,0,180); g.addColorStop(0,'#ffd98a'); g.addColorStop(1,'#ff9a3c'); x.fillStyle=g; x.fillRect(76,60,104,120);
+  x.fillStyle='rgba(120,160,255,0.55)'; x.fillRect(332,60,104,120);
+  return texFrom(c,4);
+}
+const matBld=new THREE.MeshLambertMaterial({vertexColors:true,map:facadeTex,emissive:0xffffff,emissiveMap:makeFacadeGlow(),emissiveIntensity:0});
+const matLampA=new THREE.MeshBasicMaterial({map:lampTexA,side:THREE.DoubleSide});
+const matLampB=new THREE.MeshBasicMaterial({map:lampTexB,side:THREE.DoubleSide});
+const matLampHead=new THREE.MeshLambertMaterial({vertexColors:true,emissive:0xffd9a0,emissiveIntensity:0});
+const glowTex=(()=>{ const c=cv(128,128),x=c.getContext('2d'),g=x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(255,205,125,0.95)'); g.addColorStop(0.35,'rgba(255,185,100,0.45)'); g.addColorStop(1,'rgba(255,170,80,0)'); x.fillStyle=g; x.fillRect(0,0,128,128);
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping; return t; })();
+const matGlow=new THREE.MeshBasicMaterial({map:glowTex,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,opacity:0,visible:false});
+
+/* ---- развёртка автобуса (px). 100 px = 1 м. Сетка 2700×800 (27:8) ---- */
+const NW=2900,NH=800;
+const FACES={front:[0,250,250,550],left:[250,250,1450,550],back:[1450,250,1700,550],right:[1700,250,2900,550],top:[250,0,1450,250],bottom:[250,550,1450,800]};
+function drawLivery(ctx){
+  ctx.clearRect(0,0,NW,NH);
+  const blue='#1b5fb0',white='#f3f5f7',glass='rgba(40,75,105,0.40)';
+  const glassRect=(x,y,w,h)=>{ ctx.clearRect(x,y,w,h); ctx.fillStyle=glass; ctx.fillRect(x,y,w,h); };
+  function side(face,flip){
+    const [x0,y0,x1,y1]=FACES[face];
+    ctx.fillStyle=white; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+    ctx.fillStyle=blue; ctx.fillRect(x0,y0+200,x1-x0,100); ctx.fillRect(x0,y0,x1-x0,24);
+    const X=lx=>flip?x1-lx:x0+lx;
+    const R=(l0,l1,t0,t1,fn)=>{ const a=X(l0),b=X(l1); fn(Math.min(a,b),y0+t0,Math.abs(b-a),t1-t0); };
+    for(const [l0,l1] of [[200,320],[332,452],[464,584],[790,910],[922,1042],[1054,1174]]) R(l0,l1,44,170,glassRect);
+    for(const [l0,l1] of [[55,170],[640,755]]){
+      R(l0,l1,30,285,(x,y,w,h)=>{ ctx.fillStyle='#14407a'; ctx.fillRect(x,y,w,h); });
+      R(l0+10,l1-10,42,150,glassRect); R(l0+10,l1-10,160,270,glassRect);
+    }
+    ctx.fillStyle='#fff'; ctx.font='bold 54px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('OSM BUS',(X(0)+X(1200))/2, y0+262);
+  }
+  side('left',false); side('right',true);
+  { // перед
+    const [x0,y0,x1,y1]=FACES.front; ctx.fillStyle=white; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+    ctx.fillStyle=blue; ctx.fillRect(x0,y0+200,x1-x0,100); ctx.fillRect(x0,y0,x1-x0,24);
+    glassRect(x0+18,y0+40,x1-x0-36,125);
+    ctx.fillStyle='#ffe9a8'; ctx.beginPath(); ctx.arc(x0+45,y0+235,20,0,7); ctx.arc(x1-45,y0+235,20,0,7); ctx.fill();
+    ctx.fillStyle='#222'; ctx.fillRect(x0+85,y0+222,80,26);
+  }
+  { // зад
+    const [x0,y0,x1,y1]=FACES.back; ctx.fillStyle=white; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+    ctx.fillStyle=blue; ctx.fillRect(x0,y0+200,x1-x0,100); ctx.fillRect(x0,y0,x1-x0,24);
+    glassRect(x0+40,y0+50,x1-x0-80,100);
+    ctx.fillStyle='#d11'; ctx.fillRect(x0+14,y0+215,38,50); ctx.fillRect(x1-52,y0+215,38,50);
+  }
+  { const [x0,y0,x1,y1]=FACES.top; ctx.fillStyle='#c9cfd6'; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.fillStyle='#aab2bb'; for(let i=0;i<3;i++) ctx.fillRect(x0+250+i*300,y0+60,160,130); }
+  { const [x0,y0,x1,y1]=FACES.bottom; ctx.fillStyle='#1e2126'; ctx.fillRect(x0,y0,x1-x0,y1-y0); }
+}
+function drawTemplate(ctx){
+  ctx.clearRect(0,0,NW,NH);
+  const col={front:'#ffd6d6',left:'#d6e8ff',back:'#ffe8c8',right:'#d6ffe0',top:'#f1d6ff',bottom:'#e0e0e0'};
+  const name={front:'ПЕРЕД',left:'ЛЕВЫЙ БОРТ',back:'ЗАД',right:'ПРАВЫЙ БОРТ',top:'КРЫША',bottom:'ДНО'};
+  const hint={front:'вид спереди',left:'← перед   |   зад →',back:'вид сзади',right:'← зад   |   перед →',top:'← перед   |   зад →  (верх = правый борт)',bottom:'← перед   |   зад →'};
+  ctx.fillStyle='rgba(120,120,120,.10)'; for(let y=0;y<NH;y+=40) for(let x=(y/40)%2*40;x<NW;x+=80) ctx.fillRect(x,y,40,40);
+  for(const f in FACES){
+    const [x0,y0,x1,y1]=FACES[f]; ctx.fillStyle=col[f]; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+    ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.beginPath();
+    for(let x=x0;x<=x1;x+=100){ctx.moveTo(x,y0);ctx.lineTo(x,y1);} for(let y=y0;y<=y1;y+=100){ctx.moveTo(x0,y);ctx.lineTo(x1,y);} ctx.stroke();
+    ctx.strokeStyle='#000'; ctx.lineWidth=4; ctx.strokeRect(x0+2,y0+2,x1-x0-4,y1-y0-4);
+    ctx.fillStyle='#000'; ctx.textAlign='center'; ctx.font='bold '+((x1-x0)<300?38:64)+'px sans-serif'; ctx.fillText(name[f],(x0+x1)/2,(y0+y1)/2);
+    ctx.font=((x1-x0)<300?'20':'30')+'px sans-serif'; ctx.fillText(hint[f],(x0+x1)/2,(y0+y1)/2+((x1-x0)<300?30:44));
+  }
+  ctx.fillStyle='#000'; ctx.textAlign='left'; ctx.font='26px sans-serif';
+  ctx.fillText('Развёртка 2900×800 (100 px = 1 м). Рисуйте внутри цветных граней. Прозрачность PNG поддерживается.',20,40);
+  ctx.fillText('Автобус: коробка 12 × 2.5 × 3 м, без колёс. Сохраните как PNG и загрузите кнопкой «Своя текстура».',20,80);
+  ctx.fillStyle='rgba(0,0,0,.55)'; ctx.font='18px sans-serif'; ctx.textAlign='center';
+  for(const f of ['left','right','top','bottom']){ const [x0,y0]=FACES[f]; for(let m=0;m<=12;m+=2){ ctx.fillText(m+' м',Math.min(Math.max(x0+m*100,x0+22),x0+1178),y0+24); } }
+}
+const livCanvas=document.createElement('canvas'); livCanvas.width=NW; livCanvas.height=NH;
+drawLivery(livCanvas.getContext('2d'));
+let busTex=new THREE.CanvasTexture(livCanvas); busTex.anisotropy=8;
+
+/* =====================  СЦЕНА  ===================== */
+const canvas=$('view');
+const isTouch=matchMedia('(pointer:coarse)').matches||('ontouchstart' in window);
+const renderer=new THREE.WebGLRenderer({canvas,antialias:!isTouch,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isTouch?1.5:2));
+renderer.setSize(innerWidth,innerHeight,false);
+const scene=new THREE.Scene();
+const DAY={sky:0x9ecbf0,hemi:0.9,sun:0.85,ground:0x86996f}, NIGHT={sky:0x0a0f1e,hemi:0.28,sun:0.08,ground:0x2a3126};
+scene.background=new THREE.Color(DAY.sky);
+scene.fog=new THREE.Fog(DAY.sky,120,700);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,1.5,2800);
+const hemi=new THREE.HemisphereLight(0xffffff,0x6b7a5c,DAY.hemi); scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff2d6,DAY.sun); scene.add(sun,sun.target);
+const groundMat=new THREE.MeshLambertMaterial({color:DAY.ground,map:groundTex});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(5000,5000).rotateX(-Math.PI/2),groundMat); scene.add(ground);
+/* ---- время суток, солнце, небо ---- */
+const sstep=(a,b,x)=>{ const t=Math.min(1,Math.max(0,(x-a)/(b-a))); return t*t*(3-2*t); };
+const C_SKY_DAY=new THREE.Color(0x9ecbf0), C_SKY_NIGHT=new THREE.Color(0x070b18), C_SKY_TW=new THREE.Color(0xe8905f), C_SUN_LOW=new THREE.Color(0xffa860), C_SUN_HIGH=new THREE.Color(0xfff2d6);
+const C_HEMI_DAY=new THREE.Color(0xffffff), C_HEMI_NIGHT=new THREE.Color(0x2a3552), C_GRD_DAY=new THREE.Color(0x6b7a5c), C_GRD_NIGHT=new THREE.Color(0x141a24), skyC=new THREE.Color(0x9ecbf0);
+let tod=(()=>{ const d=new Date(); return d.getHours()+d.getMinutes()/60; })(), todSpeed=60, shadowsOn=!isTouch, isDark=false;
+const sunDir=new THREE.Vector3(0,1,0); let DOY=Math.floor((Date.now()-new Date(new Date().getFullYear(),0,0))/864e5), sunElDeg=0;
+const MONTH_D=[0,31,59,90,120,151,181,212,243,273,304,334];
+function sunDecl(){ return 23.44*Math.sin(2*Math.PI*(284+DOY)/365); }
+function sunPos(hour,latDeg){
+  const decl=sunDecl()*Math.PI/180, H=(hour-12)*15*Math.PI/180, phi=latDeg*Math.PI/180;
+  const sinE=Math.sin(phi)*Math.sin(decl)+Math.cos(phi)*Math.cos(decl)*Math.cos(H), E=Math.asin(Math.max(-1,Math.min(1,sinE)));
+  const cosA=(Math.sin(decl)-sinE*Math.sin(phi))/((Math.cos(E)*Math.cos(phi))||1e-6);
+  let A=Math.acos(Math.max(-1,Math.min(1,cosA))); if(H>0) A=2*Math.PI-A;
+  return {E,A};   // A — азимут от севера по часовой стрелке
+}
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+{ const ms=isTouch?1024:2048; sun.shadow.mapSize.set(ms,ms); const sc=sun.shadow.camera; sc.left=-90; sc.right=90; sc.top=90; sc.bottom=-90; sc.near=10; sc.far=620; sc.updateProjectionMatrix(); sun.shadow.bias=-0.0006; sun.shadow.normalBias=0.35; }
+const starMat=new THREE.PointsMaterial({color:0xffffff,size:2.2,sizeAttenuation:false,transparent:true,opacity:0,fog:false,depthWrite:false});
+const stars=(()=>{ const a=[]; for(let i=0;i<900;i++){ const u=Math.random(),v=Math.random()*Math.PI*2,y=0.03+u*0.97,r=Math.sqrt(1-y*y); a.push(Math.cos(v)*r*2300,y*2300,Math.sin(v)*r*2300); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(a,3)); const m=new THREE.Points(g,starMat); m.frustumCulled=false; return m; })();
+scene.add(stars);
+const sunDisc=new THREE.Mesh(new THREE.SphereGeometry(26,14,10),new THREE.MeshBasicMaterial({color:0xfff4d0,fog:false})); sunDisc.frustumCulled=false; scene.add(sunDisc);
+function applyTime(){
+  const ll=unproj(bus.x,bus.z), sp=sunPos(tod,ll[0]), sinE=Math.sin(sp.E), cosE=Math.cos(sp.E);
+  sunDir.set(cosE*Math.sin(sp.A),sinE,-cosE*Math.cos(sp.A));
+  const k=sstep(-0.05,0.25,sinE), kd=sstep(-0.14,0.2,sinE);
+  sun.intensity=0.95*k; sun.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.45,sinE));
+  hemi.intensity=0.25+0.68*kd; hemi.color.copy(C_HEMI_NIGHT).lerp(C_HEMI_DAY,kd); hemi.groundColor.copy(C_GRD_NIGHT).lerp(C_GRD_DAY,kd);
+  const tw=Math.exp(-Math.pow(sp.E*57.2958/8,2))*0.6;
+  skyC.copy(C_SKY_NIGHT).lerp(C_SKY_DAY,kd).lerp(C_SKY_TW,tw); scene.background.copy(skyC); scene.fog.color.copy(skyC);
+  const dark=sinE<0.07; if(dark!==isDark){ isDark=dark; headL.visible=headR.visible=dark; }
+  const nf=1-sstep(-0.10,0.06,sinE); matBld.emissiveIntensity=nf*0.9; matLampHead.emissiveIntensity=nf*1.7; matGlow.opacity=nf*0.8; matGlow.visible=nf>0.01; starMat.opacity=1-sstep(-0.16,-0.02,sinE); sunElDeg=sp.E*57.2958;
+  sunDisc.visible=sinE>-0.04; sunDisc.material.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.4,sinE));
+  sun.castShadow=shadowsOn&&sinE>0.04;
+}
+function toggleNight(){ tod=(tod>=6&&tod<18)?0:12; $('tod').value=tod; }
+addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+
+/* =====================  АВТОБУС  ===================== */
+const BW=2.5,BH=3,BL=12,HX=BW/2,HL=BL/2;
+function busGeometry(){
+  const F=[
+    {n:[0,0,1],r:FACES.front,c:[[-HX,0,HL],[HX,0,HL],[HX,BH,HL],[-HX,BH,HL]]},
+    {n:[1,0,0],r:FACES.left,c:[[HX,0,HL],[HX,0,-HL],[HX,BH,-HL],[HX,BH,HL]]},
+    {n:[0,0,-1],r:FACES.back,c:[[HX,0,-HL],[-HX,0,-HL],[-HX,BH,-HL],[HX,BH,-HL]]},
+    {n:[-1,0,0],r:FACES.right,c:[[-HX,0,-HL],[-HX,0,HL],[-HX,BH,HL],[-HX,BH,-HL]]},
+    {n:[0,1,0],r:FACES.top,c:[[HX,BH,HL],[HX,BH,-HL],[-HX,BH,-HL],[-HX,BH,HL]]},
+    {n:[0,-1,0],r:FACES.bottom,c:[[-HX,0,HL],[-HX,0,-HL],[HX,0,-HL],[HX,0,HL]]}
+  ];
+  const p=[],n=[],u=[];
+  for(const f of F){
+    const e=0.5, u0=(f.r[0]+e)/NW,u1=(f.r[2]-e)/NW,vb=1-(f.r[3]-e)/NH,vt=1-(f.r[1]+e)/NH;
+    const uv=[[u0,vb],[u1,vb],[u1,vt],[u0,vt]];
+    for(const k of [0,1,2,0,2,3]){ p.push(...f.c[k]); n.push(...f.n); u.push(...uv[k]); }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(n,3));
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(u,2));
+  return g;
+}
+const busGroup=new THREE.Group(); busGroup.rotation.order='YXZ'; scene.add(busGroup);
+const busGeo=busGeometry();
+const matBack=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.BackSide,depthWrite:false,emissive:0x2a2a2a});
+const matFront=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.FrontSide,depthWrite:false,emissive:0x2a2a2a});
+const mBack=new THREE.Mesh(busGeo,matBack), mFront=new THREE.Mesh(busGeo,matFront);
+mBack.renderOrder=10; mFront.renderOrder=11;
+busGroup.add(mBack,mFront); mBack.castShadow=mFront.castShadow=true;
+const headL=new THREE.SpotLight(0xfff0cc,1.6,110,0.5,0.5), headR=headL.clone();
+for(const [h,sx] of [[headL,0.8],[headR,-0.8]]){ h.position.set(sx,1.1,HL); h.target.position.set(sx,0,HL+30); busGroup.add(h,h.target); h.visible=false; }
+function setBusTexture(tex){ busTex=tex; matBack.map=matFront.map=tex; matBack.needsUpdate=matFront.needsUpdate=true; }
+$('opacity').addEventListener('input',e=>{ matBack.opacity=matFront.opacity=+e.target.value; });
+$('dl').addEventListener('click',()=>{
+  const c=document.createElement('canvas'); c.width=NW;c.height=NH; drawTemplate(c.getContext('2d'));
+  c.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='bus_template_2900x800.png'; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500); },'image/png');
+});
+$('file').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const url=URL.createObjectURL(f), img=new Image();
+  img.onload=()=>{ const t=new THREE.Texture(img); t.anisotropy=8; t.needsUpdate=true; setBusTexture(t); URL.revokeObjectURL(url); setStatus('Текстура автобуса загружена ✓'); };
+  img.onerror=()=>setStatus('Не удалось прочитать изображение');
+  img.src=url; e.target.value='';
+});
+$('reset').addEventListener('click',()=>{ const t=new THREE.CanvasTexture(livCanvas); t.anisotropy=8; setBusTexture(t); });
+
+/* =====================  ПАРАМЕТРЫ ДОРОГ  ===================== */
+const ROAD={motorway:[12,6],motorway_link:[7,5],trunk:[11,6],trunk_link:[7,5],primary:[10,5],primary_link:[6.5,4],secondary:[9,4],secondary_link:[6,3],tertiary:[8,3],tertiary_link:[6,3],unclassified:[6.5,2],residential:[6.5,2],living_street:[5.5,2],service:[4,1],pedestrian:[4,0],track:[3.5,0],footway:[2,0],path:[1.8,0],cycleway:[2,0]};
+function roadColor(h,r){ if(r>=2) return hexc(0x3c3e42); if(r===1) return hexc(0x4d4f52); if(h==='cycleway') return hexc(0x99604f); if(h==='track'||h==='path') return hexc(0x8e7b5a); return hexc(0xa9a69c); }
+function areaStyle(tg){
+  const n=tg.natural,l=tg.landuse,le=tg.leisure;
+  if(n==='water'||l==='reservoir'||l==='basin') return {col:hexc(0x4a7ea6),y:0.05,water:true};
+  if(n==='wood'||l==='forest') return {col:hexc(0x4a6b3a),y:0.03,tree:1/150};
+  if(n==='scrub'||n==='heath') return {col:hexc(0x7b9660),y:0.03};
+  if(n==='wetland') return {col:hexc(0x6f927c),y:0.03};
+  if(n==='beach'||n==='sand') return {col:hexc(0xd0c295),y:0.03};
+  if(le==='park'||le==='garden'||le==='common'||le==='nature_reserve'||l==='village_green'||l==='recreation_ground') return {col:hexc(0x6c9150),y:0.03,tree:1/450};
+  if(l==='cemetery') return {col:hexc(0x628a55),y:0.03,tree:1/400};
+  if(l==='grass'||l==='meadow'||n==='grassland'||le==='golf_course') return {col:hexc(0x82a463),y:0.03,tree:1/1000};
+  if(l==='orchard') return {col:hexc(0x7aa05c),y:0.03,tree:1/60};
+  if(l==='farmland'||l==='allotments') return {col:hexc(0xb7b07a),y:0.03};
+  if(le==='playground'||le==='pitch') return {col:hexc(0x8fb07a),y:0.035};
+  return null;
+}
+const PAL=[[.80,.76,.70],[.74,.70,.64],[.67,.63,.59],[.82,.80,.76],[.72,.62,.55],[.62,.62,.60],[.72,.75,.78],[.85,.80,.70],[.63,.46,.39]];
+const ROOFS=[[.31,.30,.30],[.40,.32,.29],[.28,.31,.33],[.43,.37,.33],[.36,.36,.35]];
+function bHeight(tg,rng){
+  let h=parseFloat(tg.height);
+  if(!(h>0)){ const lv=parseFloat(tg['building:levels']); if(lv>0) h=lv*3.2+(lv>2?1:0); }
+  if(!(h>0)){
+    const b=tg.building;
+    if(['house','detached','semidetached_house','terrace','residential','bungalow','cabin'].includes(b)) h=5+rng()*4;
+    else if(['garage','garages','shed','roof','carport','hut','kiosk','service','greenhouse'].includes(b)) h=2.8+rng();
+    else if(['apartments','commercial','office','retail','hotel','hospital','university','school','civic','public','industrial','warehouse','dormitory'].includes(b)) h=11+rng()*18;
+    else if(b==='church'||b==='cathedral') h=22;
+    else h=7+rng()*14;
+  }
+  return Math.min(h,200);
+}
+
+/* =====================  ТАЙЛЫ  ===================== */
+const tiles=new Map(), buildQ=[], rawCache=new Map(), ownedAreas=new Map(), inflight=new Set();
+let gen=0, range=1, epIdx=0, needSnap=true, lastError='';
+const bus={x:0,y:0,z:0,h:0,v:0,steer:0,pitch:0,roll:0};
+
+function clearTileContent(t){
+  if(t.satMat){ t.satMat.map.dispose(); t.satMat.dispose(); t.satMat=null; } t.terrMesh=null;
+  if(t.group){ scene.remove(t.group); t.group.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); t.group=null; }
+  gRemove(roadGrid,t.rc,t.key); gRemove(bldGrid,t.bc,t.key); gRemove(nameGrid,t.nc,t.key);
+  t.rc=new Set(); t.bc=new Set(); t.nc=new Set(); t.stops=[];
+}
+function removeTile(t){ clearTileContent(t); tiles.delete(t.key); }
+function ensureTiles(){
+  const bi=Math.floor(bus.x/S), bj=Math.floor(bus.z/S);
+  for(let di=-range;di<=range;di++)for(let dj=-range;dj<=range;dj++){
+    const i=bi+di,j=bj+dj,k=i+','+j; let t=tiles.get(k);
+    if(!t){ t={key:k,i,j,state:'queued',tries:0,retryAt:0,d:0,group:null,rc:new Set(),bc:new Set(),nc:new Set(),stops:[],owned:[]}; tiles.set(k,t); }
+    t.d=Math.hypot((i+.5)*S-bus.x,(j+.5)*S-bus.z);
+  }
+  for(const t of [...tiles.values()]) if(Math.max(Math.abs(t.i-bi),Math.abs(t.j-bj))>range+1) removeTile(t);
+}
+function overpassQuery(t){
+  const [s,w]=unproj(t.i*S,(t.j+1)*S), [n,e]=unproj((t.i+1)*S,t.j*S);
+  return `[out:json][timeout:25][bbox:${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)}];(`+
+  `way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|pedestrian|track|footway|path|cycleway)$"];`+
+  `way["railway"~"^(rail|tram|light_rail|narrow_gauge)$"];`+
+  `way["building"]["building"!="no"];`+
+  `way["leisure"~"^(park|garden|playground|pitch|common|nature_reserve|golf_course)$"];`+
+  `way["landuse"~"^(grass|forest|meadow|recreation_ground|village_green|cemetery|orchard|reservoir|basin|farmland|allotments)$"];`+
+  `way["natural"~"^(wood|scrub|water|grassland|heath|wetland|beach|sand)$"];`+
+  `way["waterway"~"^(river|canal|stream)$"];`+
+  `node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];node["public_transport"="platform"]["bus"="yes"];`+
+  `);out geom;`;
+}
+async function fetchOverpass(t,g,qfn,opt){
+  const q=(qfn||overpassQuery)(t);
+  for(let a=0;a<ENDPOINTS.length;a++){
+    if(g!==gen) return null;
+    const idx=(epIdx+a)%ENDPOINTS.length, ac=new AbortController(), tm=setTimeout(()=>ac.abort(),(opt&&opt.to)||35000);
+    inflight.add(ac);
+    try{
+      const r=await fetch(ENDPOINTS[idx],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ac.signal});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      if(d.remark&&/error|timed out/i.test(d.remark)&&!(d.elements&&d.elements.length)) throw new Error('Overpass: '+d.remark);
+      epIdx=idx; if(!(opt&&opt.quiet)) lastError=''; return d;
+    }catch(e){ if(!(opt&&opt.quiet)) lastError='Overpass: '+String(e&&e.message||e); }
+    finally{ clearTimeout(tm); inflight.delete(ac); }
+  }
+  return null;
+}
+/* ===== OpenFreeMap: векторные тайлы MVT (схема OpenMapTiles), без ключа ===== */
+const VT_Z=14, VT_TJ='https://tiles.openfreemap.org/planet';
+let vtInfo=null; const vtCache=new Map(), enrCache=new Map(); let enrActive=0;
+function varintAt(u8,o){ let r=0,m=1,b; do{ b=u8[o.p++]; r+=(b&127)*m; m*=128; }while(b&128); return r; }
+function readMsg(u8,st,en,cb){
+  const o={p:st};
+  while(o.p<en){
+    const tag=varintAt(u8,o), f=Math.floor(tag/8), w=tag%8;
+    if(w===0) cb(f,w,varintAt(u8,o),0,0);
+    else if(w===2){ const l=varintAt(u8,o); cb(f,w,l,o.p,o.p+l); o.p+=l; }
+    else if(w===5){ cb(f,w,0,o.p,o.p+4); o.p+=4; }
+    else if(w===1){ cb(f,w,0,o.p,o.p+8); o.p+=8; }
+    else throw new Error('bad pbf');
+  }
+}
+function packedInto(u8,st,en,arr){ const o={p:st}; while(o.p<en) arr.push(varintAt(u8,o)); }
+function decodeMVT(buf,want){
+  const u8=new Uint8Array(buf), dv=new DataView(buf), dec=new TextDecoder(), layers={};
+  readMsg(u8,0,u8.length,(f,w,v,st,en)=>{
+    if(f!==3||w!==2) return;
+    const L={name:'',ext:4096,keys:[],vals:[],feats:[]}, raw=[];
+    readMsg(u8,st,en,(f2,w2,v2,s2,e2)=>{
+      if(f2===1) L.name=dec.decode(u8.subarray(s2,e2));
+      else if(f2===2) raw.push([s2,e2]);
+      else if(f2===3) L.keys.push(dec.decode(u8.subarray(s2,e2)));
+      else if(f2===4){
+        let val=null;
+        readMsg(u8,s2,e2,(f3,w3,v3,s3,e3)=>{
+          if(f3===1) val=dec.decode(u8.subarray(s3,e3)); else if(f3===2) val=dv.getFloat32(s3,true); else if(f3===3) val=dv.getFloat64(s3,true);
+          else if(f3===4||f3===5) val=v3; else if(f3===6) val=(v3%2?-(v3+1)/2:v3/2); else if(f3===7) val=!!v3;
+        });
+        L.vals.push(val);
+      } else if(f2===5) L.ext=v2;
+    });
+    if(want&&want.indexOf(L.name)<0) return;
+    for(const [s2,e2] of raw){
+      const F={id:undefined,tags:[],type:0,geom:[],props:{}};
+      readMsg(u8,s2,e2,(f3,w3,v3,s3,e3)=>{
+        if(f3===1) F.id=v3; else if(f3===3) F.type=v3;
+        else if(f3===2){ if(w3===2) packedInto(u8,s3,e3,F.tags); else F.tags.push(v3); }
+        else if(f3===4){ if(w3===2) packedInto(u8,s3,e3,F.geom); else F.geom.push(v3); }
+      });
+      for(let i=0;i+1<F.tags.length;i+=2) F.props[L.keys[F.tags[i]]]=L.vals[F.tags[i+1]];
+      L.feats.push(F);
+    }
+    layers[L.name]=L;
+  });
+  return layers;
+}
+function mvtGeom(g){
+  const rings=[]; let cur=null,x=0,y=0,i=0;
+  while(i<g.length){
+    const c=g[i++], id=c%8, n=Math.floor(c/8);
+    if(id===7){ if(cur&&cur.length) cur.push([cur[0][0],cur[0][1]]); }
+    else for(let k=0;k<n;k++){ const dx=g[i++],dy=g[i++]; x+=(dx%2?-(dx+1)/2:dx/2); y+=(dy%2?-(dy+1)/2:dy/2); if(id===1){ cur=[[x,y]]; rings.push(cur); } else if(cur) cur.push([x,y]); }
+  }
+  return rings;
+}
+const LCODE={building:0,transportation:1,water:2,waterway:3,landcover:4,landuse:5,park:6,poi:7,transportation_name:8};
+function mapMvt(layer,p,type){
+  switch(layer){
+  case 'building':{ if(p.hide_3d) return null; const t={building:'yes'}; if(p.render_height>0) t.height=String(p.render_height); if(p.render_min_height>0) t.min_height=String(p.render_min_height); if(p.colour) t['building:colour']=String(p.colour); return {t,k:'poly'}; }
+  case 'transportation':{
+    if(type===3) return null; const c=p.class, sc=p.subclass; let h=null;
+    if(c==='rail'||c==='transit'){
+      if(p.brunnel==='tunnel'||(sc==='subway'&&p.brunnel!=='bridge')) return null;
+      const t={railway:(sc==='tram'||sc==='light_rail')?'tram':'rail'}; if(p.brunnel==='bridge') t.bridge='yes'; return {t,k:'line'};
+    }
+    if(c==='motorway'||c==='trunk'||c==='primary'||c==='secondary'||c==='tertiary') h=c+(p.ramp==1?'_link':'');
+    else if(c==='minor') h=sc==='living_street'?'living_street':sc==='pedestrian'?'pedestrian':'residential';
+    else if(c==='service'||c==='busway'||c==='raceway') h='service';
+    else if(c==='track') h='track';
+    else if(c==='path') h=sc==='cycleway'?'cycleway':sc==='steps'?null:(sc==='pedestrian'||sc==='footway'||sc==='crossing')?'footway':'path';
+    if(!h) return null; const t={highway:h}; if(p.brunnel==='tunnel') t.tunnel='yes'; if(p.brunnel==='bridge') t.bridge='yes'; return {t,k:'line'}; }
+  case 'transportation_name':{ if(type===3) return null; const c=p.class; if(c==='rail'||c==='transit'||c==='ferry'||c==='aerialway'||c==='pier') return null; const nm=p.name||p['name:ru']||p['name:latin']; return nm?{t:{name:String(nm),_nm:1},k:'line'}:null; }
+  case 'water': return {t:{natural:'water'},k:'poly'};
+  case 'waterway':{ const c=p.class; if(c!=='river'&&c!=='canal'&&c!=='stream') return null; return {t:{waterway:c},k:'line'}; }
+  case 'landcover':{ const c=p.class,m={wood:{natural:'wood'},grass:{landuse:'grass'},farmland:{landuse:'farmland'},sand:{natural:'sand'},wetland:{natural:'wetland'}}[c]; return m?{t:m,k:'poly'}:null; }
+  case 'landuse':{ const c=p.class,m={cemetery:{landuse:'cemetery'},playground:{leisure:'playground'},pitch:{leisure:'pitch'},recreation_ground:{landuse:'recreation_ground'}}[c]; return m?{t:m,k:'poly'}:null; }
+  case 'park': return p.class==='park'?{t:{leisure:'park'},k:'poly'}:null;
+  case 'poi': return (p.class==='bus'&&p.subclass==='bus_stop')?{t:{highway:'bus_stop',name:p.name||p['name:ru']||p['name:latin']||''},k:'point'}:null;
+  }
+  return null;
+}
+function mvtToElements(buf,z,tx,ty,schema){
+  const sg=schema==='sg', layers=decodeMVT(buf,sg?null:Object.keys(LCODE)), out=[], n=Math.pow(2,z);
+  if(sg&&!Object.keys(layers).length) throw new Error('формат тайла не распознан (нет MVT-слоёв)');
+  for(const name in layers){
+    const L=layers[name], ext=L.ext||4096;
+    const ll=q=>{ const X=(tx+q[0]/ext)/n, Y=(ty+q[1]/ext)/n; return {lat:Math.atan(Math.sinh(Math.PI*(1-2*Y)))*180/Math.PI, lon:X*360-180}; };
+    const inE=(x,y)=>x>=0&&x<ext&&y>=0&&y<ext;
+    for(const F of L.feats){
+      const m=sg?(mapMvt(name,F.props,F.type)||mapGeneric(name,F.props,F.type)):mapMvt(name,F.props,F.type); if(!m) continue;
+      const rings=mvtGeom(F.geom); if(!rings.length) continue;
+      const hid=F.id!==undefined?F.id:(((Math.round(rings[0][0][0])*73856093)^(Math.round(rings[0][0][1])*19349663)^(tx*83492791)^(ty*2654435761))>>>0);
+      const id=hid*16+(LCODE[name]!==undefined?LCODE[name]:9);
+      const push=(pts,cs,ce)=>{
+        const g=pts.map(ll); let a=1e9,b=1e9,c=-1e9,d=-1e9;
+        for(const q of g){ if(q.lat<a)a=q.lat; if(q.lat>c)c=q.lat; if(q.lon<b)b=q.lon; if(q.lon>d)d=q.lon; }
+        out.push({type:'way',id,tags:m.t,geometry:g,bb:[a,b,c,d],cut:[!!cs,!!ce]});
+      };
+      if(m.k==='point'){ const q=rings[0][0]; if(inE(q[0],q[1])){ const p=ll(q); out.push({type:'node',id,tags:m.t,lat:p.lat,lon:p.lon,bb:[p.lat,p.lon,p.lat,p.lon]}); } }
+      else if(m.k==='poly'){
+        let sg=0;
+        for(const r of rings){
+          if(r.length<4) continue; let A=0; for(let i=0;i<r.length-1;i++) A+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1];
+          if(!sg) sg=Math.sign(A); if(Math.sign(A)!==sg||A===0) continue;
+          push(r);
+        }
+      } else {
+        for(const r of rings){
+          let run=null, cs=false;
+          for(let i=0;i<r.length-1;i++){
+            const mx=(r[i][0]+r[i+1][0])/2,my=(r[i][1]+r[i+1][1])/2;
+            if(inE(mx,my)){ if(!run){ run=[r[i]]; cs=i>0; } run.push(r[i+1]); }
+            else if(run){ if(run.length>1) push(run,cs,true); run=null; }
+          }
+          if(run&&run.length>1) push(run,cs,false);
+        }
+      }
+    }
+  }
+  return out;
+}
+let srcNote='';
+async function gunzipIfNeeded(buf){
+  const u=new Uint8Array(buf); if(!(u[0]===0x1f&&u[1]===0x8b)) return buf;
+  if(typeof DecompressionStream==='undefined') throw new Error('тайл сжат gzip, браузер не умеет его распаковать');
+  return await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+}
+// терпимая схема для сторонних векторных тайлов (streets.gl): угадываем смысл слоя по имени и тегам
+function mapGeneric(layer,p,type){
+  const nm=String(layer).toLowerCase(), cls=String(p.highway||p.class||p.type||p.kind||p.subtype||'').toLowerCase();
+  if(/build|house|roof/.test(nm)||p.building){
+    if(type!==3||p.hide_3d) return null;
+    const t={building:'yes'}, h=p.render_height||p.height||p.building_height||p['building:height'], mh=p.render_min_height||p.min_height||p['building:min_height'], lv=p.levels||p['building:levels'];
+    if(+h>0) t.height=String(+h); else if(+lv>0) t.height=String(+lv*3.2); if(+mh>0) t.min_height=String(+mh);
+    const c=p.colour||p.color||p['building:colour']; if(c) t['building:colour']=String(c); return {t,k:'poly'};
+  }
+  if(p.railway||/rail|tram/.test(nm)&&type!==3){ if(type===3) return null; const r=String(p.railway||cls); return {t:Object.assign({railway:/tram|light/.test(r)?'tram':'rail'},(p.bridge&&p.bridge!=='no'&&p.bridge!==0)||p.brunnel==='bridge'?{bridge:'yes'}:{}),k:'line'}; }
+  if(p.highway==='bus_stop'||(cls==='bus'&&type===1)||cls==='bus_stop') return {t:{highway:'bus_stop',name:p.name||p['name:ru']||''},k:'point'};
+  if(type!==3&&!/water/.test(nm)&&(/road|highway|street|transport|way|path/.test(nm)||p.highway)){
+    const ramp=/_link$/.test(cls)||p.ramp==1?1:0, base=cls.replace(/_link$/,'');
+    let c='minor',sc;
+    if(/^(motorway|trunk|primary|secondary|tertiary)$/.test(base)) c=base;
+    else if(/^(footway|pedestrian|cycleway|steps|path|bridleway|crossing|corridor)$/.test(base)){ c='path'; sc=base; }
+    else if(base==='track') c='track'; else if(/^(service|busway|raceway)$/.test(base)) c='service';
+    const br=p.brunnel||((p.bridge&&p.bridge!=='no'&&p.bridge!==0)?'bridge':(p.tunnel&&p.tunnel!=='no'&&p.tunnel!==0)?'tunnel':undefined);
+    return mapMvt('transportation',{class:c,subclass:sc,ramp,brunnel:br},type);
+  }
+  if(/water/.test(nm)||p.natural==='water'||cls==='water'){ if(type===3) return {t:{natural:'water'},k:'poly'}; const c=cls; if(c==='river'||c==='canal'||c==='stream') return {t:{waterway:c},k:'line'}; return null; }
+  if(type===3&&/land|park|green|forest|wood|nature|leisure/.test(nm)){
+    const v=String(p.landuse||p.leisure||p.natural||cls);
+    if(/forest|wood/.test(v)) return {t:{natural:'wood'},k:'poly'}; if(/park|garden|common|recreation/.test(v)) return {t:{leisure:'park'},k:'poly'};
+    if(/grass|meadow|village_green/.test(v)) return {t:{landuse:'grass'},k:'poly'}; if(/farm/.test(v)) return {t:{landuse:'farmland'},k:'poly'};
+    if(/sand|beach/.test(v)) return {t:{natural:'sand'},k:'poly'}; if(/cemetery/.test(v)) return {t:{landuse:'cemetery'},k:'poly'}; if(/pitch|playground/.test(v)) return {t:{leisure:'pitch'},k:'poly'};
+  }
+  return null;
+}
+function getVT(mode){
+  if(mode==='streets'){
+    const url=($('sgurl').value||'').trim(); if(!url.includes('{z}')) return Promise.reject(new Error('в адресе нет {z}/{x}/{y}'));
+    return Promise.resolve({url,z:14,schema:'sg',tag:'sg|'+url});
+  }
+  if(!vtInfo) vtInfo=fetch(VT_TJ).then(r=>{ if(!r.ok) throw new Error('TileJSON HTTP '+r.status); return r.json(); })
+    .then(j=>{ if(!j.tiles||!j.tiles[0]) throw new Error('нет tiles в TileJSON'); return {url:j.tiles[0],z:Math.min(VT_Z,j.maxzoom||VT_Z),schema:'omt',tag:'omt'}; })
+    .catch(e=>{ vtInfo=null; throw e; });
+  return vtInfo;
+}
+function vtElements(info,x,y){
+  const key=info.tag+'/'+info.z+'/'+x+'/'+y; if(vtCache.has(key)) return vtCache.get(key);
+  const pr=(async()=>{
+    const ac=new AbortController(), tm=setTimeout(()=>ac.abort(),30000);
+    try{
+      const r=await fetch(info.url.replace('{z}',info.z).replace('{x}',x).replace('{y}',y),{signal:ac.signal});
+      if(r.status===404||r.status===204) return [];
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return mvtToElements(await gunzipIfNeeded(await r.arrayBuffer()),info.z,x,y,info.schema);
+    } finally { clearTimeout(tm); }
+  })();
+  vtCache.set(key,pr); pr.catch(()=>vtCache.delete(key));
+  if(vtCache.size>20) vtCache.delete(vtCache.keys().next().value);
+  return pr;
+}
+async function fetchVector(t,mode){
+  const info=await getVT(mode), n=Math.pow(2,info.z);
+  const [s,w]=unproj(t.i*S,(t.j+1)*S), [nn,e]=unproj((t.i+1)*S,t.j*S), M=0.0006;
+  const tx=lon=>Math.floor((lon+180)/360*n), ty=lat=>{ const r=lat*Math.PI/180; return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n); };
+  const x0=tx(w),x1=tx(e),y0=ty(nn),y1=ty(s), jobs=[];
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++) jobs.push(vtElements(info,x,y));
+  const lists=await Promise.all(jobs), els=[];
+  for(const L of lists) for(const el of L){ const b=el.bb; if(b[2]<s-M||b[0]>nn+M||b[3]<w-M||b[1]>e+M) continue; els.push(el); }
+  if(mode==='streets'&&!els.length) throw new Error('в тайлах нет распознанных объектов');
+  return {elements:els,src:'vector',from:mode==='streets'?'streets.gl':'OpenFreeMap'};
+}
+function enrQuery(t){
+  const [s,w]=unproj(t.i*S,(t.j+1)*S), [n,e]=unproj((t.i+1)*S,t.j*S);
+  return `[out:json][timeout:15][bbox:${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)}];(node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];);out;`;
+}
+async function enrichTile(t,g){
+  enrActive++; t.enrTried=true;
+  try{
+    const d=await fetchOverpass(t,g,enrQuery,{to:12000,quiet:true});
+    if(d&&d.elements&&g===gen&&tiles.get(t.key)===t){
+      t.enr=d.elements; enrCache.set(t.key,t.enr);
+      const raw=rawCache.get(t.key); if(t.state==='built'&&raw) buildQ.push({t,raw,g});
+    }
+  }catch(e){} finally{ enrActive--; }
+}
+async function loadTile(t){
+  t.state='loading'; const g=gen;
+  let data=rawCache.get(t.key);
+  if(!data){
+    const mode=$('src').value, order=mode==='streets'?['streets','vector','overpass']:mode==='vector'?['vector']:mode==='overpass'?['overpass']:['vector','overpass'];
+    for(const m of order){
+      try{
+        if(m==='overpass'){ const d=await fetchOverpass(t,g); if(d) data={elements:d.elements||[],src:'overpass',from:'Overpass'}; }
+        else data=await fetchVector(t,m);
+      }catch(e){
+        data=null; const msg=(m==='streets'?'streets.gl':'OpenFreeMap')+': '+String(e&&e.message||e); lastError=msg;
+        if(m==='streets') srcNote='streets.gl недоступен → '+(order[1]==='vector'?'OpenFreeMap':'запасной источник')+' ('+String(e&&e.message||e).slice(0,70)+')';
+      }
+      if(g!==gen||tiles.get(t.key)!==t) return;
+      if(data) break;
+    }
+    if(!data){ t.state='failed'; t.tries++; t.retryAt=performance.now()+Math.min(60000,6000*t.tries); return; }
+    if(mode==='streets'&&data.from==='streets.gl') srcNote='';
+    rawCache.set(t.key,data); if(rawCache.size>40) rawCache.delete(rawCache.keys().next().value);
+  }
+  t.src=data.src; if(enrCache.has(t.key)&&!t.enr){ t.enr=enrCache.get(t.key); t.enrTried=true; }
+  await demReady(t,g); if(g!==gen||tiles.get(t.key)!==t) return;
+  buildQ.push({t,raw:data,g});
+}
+function pump(){
+  ensureTiles();
+  const now=performance.now(); let active=0; const cand=[];
+  for(const t of tiles.values()){ if(t.state==='loading') active++; else if(t.state==='queued'||(t.state==='failed'&&now>t.retryAt)) cand.push(t); }
+  cand.sort((a,b)=>a.d-b.d);
+  for(const t of cand){ if(active>=3) break; active++; loadTile(t); }
+  if($('enr').checked&&enrActive<1&&$('src').value!=='overpass'){
+    let best=null; for(const t of tiles.values()) if(t.state==='built'&&t.src==='vector'&&!t.enrTried&&(!best||t.d<best.d)) best=t;
+    if(best) enrichTile(best,gen);
+  }
+}
+
+function clipRect(poly,x0,z0,x1,z1){
+  let p=poly.slice(); if(p.length>1&&p[0][0]===p[p.length-1][0]&&p[0][1]===p[p.length-1][1]) p.pop();
+  for(const [ax,sg,b] of [[0,1,x0],[0,-1,x1],[1,1,z0],[1,-1,z1]]){
+    if(p.length<3) return [];
+    const inside=q=>sg>0?q[ax]>=b:q[ax]<=b, o=[];
+    for(let i=0;i<p.length;i++){
+      const a=p[i],c=p[(i+1)%p.length],ia=inside(a),ic=inside(c);
+      if(ia) o.push(a);
+      if(ia!==ic){ const t=(b-a[ax])/(c[ax]-a[ax]); o.push([a[0]+(c[0]-a[0])*t,a[1]+(c[1]-a[1])*t]); }
+    }
+    p=o;
+  }
+  return p;
+}
+
+/* =====================  РЕЛЬЕФ  ===================== */
+const DEMZ=12, DEMN=1<<DEMZ, NODE=25, TS=6.25, TN=80;
+const DEMURLS=['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png','https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'];
+const demData=new Map(), demProm=new Map(), nodeMemo=new Map();
+let demBase=null, demInit=null, demFailed=false, terrEnabled=true, EXAG=1, terrMinH=0;
+const terrTex=makeNoise(256,190,70);
+const matTerrain=new THREE.MeshLambertMaterial({vertexColors:true});
+const SAT_Z=16; let satEnabled=true, satNote=''; const satCache=new Map();
+function mercN(x,z,n){ const ll=unproj(x,z), r=ll[0]*Math.PI/180; return [(ll[1]+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]; }
+function satTile(tpl,z,x,y){
+  const url=tpl.replace('{z}',z).replace('{x}',x).replace('{y}',y); let p=satCache.get(url); if(p) return p;
+  p=new Promise(res=>{ const im=new Image(); im.crossOrigin='anonymous'; const tm=setTimeout(()=>{ im.src=''; res(null); },20000);
+    im.onload=()=>{ clearTimeout(tm); res(im); }; im.onerror=()=>{ clearTimeout(tm); res(null); }; im.src=url; });
+  satCache.set(url,p); p.then(v=>{ if(!v&&satCache.get(url)===p) satCache.delete(url); });
+  if(satCache.size>(isTouch?80:150)) satCache.delete(satCache.keys().next().value);
+  return p;
+}
+function applySat(T){ if(T.terrMesh) T.terrMesh.material=(satEnabled&&T.satMat)?T.satMat:matTerrain; }
+async function loadSat(T,mesh){
+  const tpl=($('saturl').value||'').trim(); if(!satEnabled||!tpl.includes('{z}')) return;
+  const g=gen, n=1<<SAT_Z, a=mercN(T.i*S,T.j*S,n), b=mercN((T.i+1)*S,(T.j+1)*S,n), CW=512;
+  const c=cv(CW,CW), x=c.getContext('2d'), sx=CW/((b[0]-a[0])*256), sy=CW/((b[1]-a[1])*256); let ok=0,total=0; const jobs=[];
+  for(let tx=Math.floor(a[0]);tx<=Math.floor(b[0]);tx++)for(let ty=Math.floor(a[1]);ty<=Math.floor(b[1]);ty++){
+    total++; jobs.push(satTile(tpl,SAT_Z,tx,ty).then(im=>{ if(im){ x.drawImage(im,(tx-a[0])*256*sx,(ty-a[1])*256*sy,256*sx+1,256*sy+1); ok++; } }));
+  }
+  await Promise.all(jobs);
+  if(g!==gen||tiles.get(T.key)!==T||T.terrMesh!==mesh) return;
+  if(!ok){ satNote='спутниковые снимки недоступны'; return; }
+  if(ok<total) satNote='часть снимков не загрузилась'; else if(satNote) satNote='';
+  const tex=new THREE.CanvasTexture(c); tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping; tex.anisotropy=8;
+  if(T.satMat){ T.satMat.map.dispose(); T.satMat.dispose(); }
+  T.satMat=new THREE.MeshLambertMaterial({map:tex}); applySat(T);
+}
+const GROUND_RGB=hexc(0x86996f);
+function terrOn(){ return terrEnabled&&demBase!==null&&!demFailed; }
+function updTerrSettings(){ terrEnabled=!!$('terr').checked; const v=parseFloat($('exag').value); EXAG=v>0?v:1; SMOOTH=+$('smooth').value||0; }
+async function fetchDemTile(tx,ty){
+  let last=new Error('нет данных высот');
+  for(const u of DEMURLS){
+    try{
+      const ac=new AbortController(), tm=setTimeout(()=>ac.abort(),25000); let r;
+      try{ r=await fetch(u.replace('{z}',DEMZ).replace('{x}',tx).replace('{y}',ty),{signal:ac.signal}); } finally{ clearTimeout(tm); }
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const bmp=await createImageBitmap(await r.blob(),{premultiplyAlpha:'none',colorSpaceConversion:'none'});
+      const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(bmp,0,0);
+      const px=x.getImageData(0,0,256,256).data, d=new Float32Array(65536);
+      for(let i=0;i<65536;i++){ const e=px[i*4]*256+px[i*4+1]+px[i*4+2]/256-32768; d[i]=e<-1?-1:e; }
+      return d;
+    }catch(e){ last=e; }
+  }
+  throw last;
+}
+function demTile(tx,ty){
+  const k=tx+'/'+ty; let pr=demProm.get(k); if(pr) return pr;
+  pr=fetchDemTile(tx,ty).then(d=>{ demData.set(k,d); nodeMemo.clear(); if(demData.size>48){ const o=demData.keys().next().value; demData.delete(o); demProm.delete(o); } return true; });
+  demProm.set(k,pr); pr.catch(()=>{ if(demProm.get(k)===pr) demProm.delete(k); });
+  return pr;
+}
+function mercPx(x,z){ const ll=unproj(x,z), r=ll[0]*Math.PI/180; return [(ll[1]+180)/360*DEMN,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*DEMN]; }
+const demProc=new Map();
+const SMOOTH_T=[[1.5,6],[3,10],[5,16],[8,26]]; let SMOOTH=2;
+function morph(src,W,r,isMin){
+  const tmp=new Float32Array(W*W), out=new Float32Array(W*W);
+  for(let j=0;j<W;j++){ const o=j*W; for(let i=0;i<W;i++){ let v=src[o+i]; for(let k=-r;k<=r;k++){ const ii=i+k<0?0:i+k>=W?W-1:i+k, q=src[o+ii]; if(isMin?q<v:q>v) v=q; } tmp[o+i]=v; } }
+  for(let j=0;j<W;j++) for(let i=0;i<W;i++){ let v=tmp[j*W+i]; for(let k=-r;k<=r;k++){ const jj=j+k<0?0:j+k>=W?W-1:j+k, q=tmp[jj*W+i]; if(isMin?q<v:q>v) v=q; } out[j*W+i]=v; }
+  return out;
+}
+function boxBlur(src,W,r){
+  const tmp=new Float32Array(W*W), out=new Float32Array(W*W), n=2*r+1;
+  for(let j=0;j<W;j++){ const o=j*W; let sum=0; for(let k=-r;k<=r;k++) sum+=src[o+(k<0?0:k>=W?W-1:k)];
+    for(let i=0;i<W;i++){ tmp[o+i]=sum/n; const a=i-r<0?0:i-r, b=i+r+1>=W?W-1:i+r+1; sum+=src[o+b]-src[o+a]; } }
+  for(let i=0;i<W;i++){ let sum=0; for(let k=-r;k<=r;k++) sum+=tmp[(k<0?0:k>=W?W-1:k)*W+i];
+    for(let j=0;j<W;j++){ out[j*W+i]=sum/n; const a=j-r<0?0:j-r, b=j+r+1>=W?W-1:j+r+1; sum+=tmp[b*W+i]-tmp[a*W+i]; } }
+  return out;
+}
+// Обработка высот: 1) убираем узкие выступы (дома, кроны, мосты) и узкие ямы; 2) мелкие неровности относительно
+// «большого» рельефа выравниваем, средние и крупные оставляем. Считается по 3×3 тайлам, чтобы не было швов.
+function demProcess(tx,ty){
+  const key=tx+'/'+ty; if(demProc.has(key)) return true;
+  const c=demData.get(key); if(!c) return false;
+  const W=768, A=new Float32Array(W*W);
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const t=demData.get((tx+dx)+'/'+(ty+dy)) || c, ox=(dx+1)*256, oy=(dy+1)*256, own=t!==c||(dx===0&&dy===0);
+    for(let j=0;j<256;j++){ const row=(oy+j)*W+ox; for(let i=0;i<256;i++){
+      A[row+i]=own?t[j*256+i]:c[(dy<0?0:dy>0?255:j)*256+(dx<0?0:dx>0?255:i)];
+    } }
+  }
+  const T=SMOOTH_T[SMOOTH]||SMOOTH_T[2];
+  let F=morph(morph(A,W,2,true),W,2,false);        // открытие: срезает узкие бугры шириной до ~100 м
+  F=morph(morph(F,W,1,false),W,1,true);            // закрытие: заливает узкие ямы до ~60 м
+  let Hs=F, Hb=F; for(let k=0;k<3;k++){ Hs=boxBlur(Hs,W,2); Hb=boxBlur(Hb,W,5); }
+  const out=new Float32Array(258*258);
+  for(let j=0;j<258;j++)for(let i=0;i<258;i++){
+    const id=(255+j)*W+(255+i), D=Hs[id]-Hb[id], t=Math.min(1,Math.max(0,(Math.abs(D)-T[0])/(T[1]-T[0]))), w=t*t*(3-2*t);
+    let v=Hb[id]+D*w; if(v<-1) v=-1; out[j*258+i]=v;
+  }
+  demProc.set(key,out); if(demProc.size>40) demProc.delete(demProc.keys().next().value);
+  return true;
+}
+async function demEnsure(x0,z0,x1,z1){
+  const a=mercPx(x0,z0),b=mercPx(x1,z1),c=mercPx(x0,z1),d=mercPx(x1,z0), xs=[a[0],b[0],c[0],d[0]], ys=[a[1],b[1],c[1],d[1]];
+  const tx0=Math.floor(Math.min(...xs)), tx1=Math.floor(Math.max(...xs)), ty0=Math.floor(Math.min(...ys)), ty1=Math.floor(Math.max(...ys)), need=[], nb=[];
+  for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++) need.push(demTile(tx,ty));
+  for(let tx=tx0-1;tx<=tx1+1;tx++)for(let ty=ty0-1;ty<=ty1+1;ty++) if(tx<tx0||tx>tx1||ty<ty0||ty>ty1) nb.push(demTile(tx,ty));
+  await Promise.all(need);
+  await Promise.race([Promise.allSettled(nb),new Promise(r=>setTimeout(r,8000))]);
+  for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++) demProcess(tx,ty);
+}
+function rawElev(x,z){
+  const m=mercPx(x,z), fx=m[0]*256-0.5, fy=m[1]*256-0.5, i0=Math.floor(fx), j0=Math.floor(fy), ax=fx-i0, ay=fy-j0;
+  const tx=Math.floor(i0/256), ty=Math.floor(j0/256), k=tx+'/'+ty; let p=demProc.get(k);
+  if(!p){ if(!demProcess(tx,ty)) return NaN; p=demProc.get(k); }
+  const li=i0-tx*256+1, lj=j0-ty*256+1, o=lj*258+li;
+  return (p[o]*(1-ax)+p[o+1]*ax)*(1-ay)+(p[o+258]*(1-ax)+p[o+259]*ax)*ay;
+}
+function reliefAbs(x,z){ return rawElev(x,z); }
+function relief(x,z){ const v=reliefAbs(x,z); return v===v?(v-demBase)*EXAG:0; }
+function nodeH(i,j){
+  const k=i+','+j; let v=nodeMemo.get(k);
+  if(v===undefined){ v=relief(i*NODE,j*NODE); nodeMemo.set(k,v); }
+  return v;
+}
+// высота земли под точкой (та же кусочно-линейная поверхность, что и у меша рельефа)
+function th(x,z){
+  if(!terrOn()) return 0;
+  if(nodeMemo.size>200000) nodeMemo.clear();
+  const gx=x/NODE, gz=z/NODE, i=Math.floor(gx), j=Math.floor(gz), fx=gx-i, fz=gz-j;
+  const h00=nodeH(i,j), h10=nodeH(i+1,j), h01=nodeH(i,j+1), h11=nodeH(i+1,j+1);
+  return fx>=fz?h00+(h10-h00)*fx+(h11-h10)*fz:h00+(h11-h01)*fx+(h01-h00)*fz;
+}
+async function demReady(t,g){
+  if(!terrEnabled||demFailed) return;
+  try{
+    if(!demInit) demInit=(async()=>{ await demEnsure(-700,-700,700,700); demBase=0; const b=reliefAbs(0,0); demBase=b===b?b:0; nodeMemo.clear(); })();
+    await demInit;
+    await demEnsure(t.i*S-350,t.j*S-350,(t.i+1)*S+350,(t.j+1)*S+350);
+  }catch(e){ lastError='Рельеф: '+String(e&&e.message||e); if(demBase===null){ demFailed=true; demInit=null; } }
+}
+function buildTerrainMesh(T,areaWays){
+  const x0=T.i*S,z0=T.j*S,n=TN+1, ci=new Int16Array(n*n).fill(-1), cols=[];
+  const polys=areaWays.filter(a=>a.st&&a.pts.length>3).sort((a,b)=>a.st.y-b.st.y);
+  for(const a of polys){
+    let mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9; for(const q of a.pts){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mnz)mnz=q[1]; if(q[1]>mxz)mxz=q[1]; }
+    if(mxx<x0||mnx>x0+S||mxz<z0||mnz>z0+S) continue;
+    const k=cols.length; cols.push(a.st.col); const rows=new Map(), P=a.pts;
+    for(let e=0;e<P.length-1;e++){
+      let xa=P[e][0],za=P[e][1],xb=P[e+1][0],zb=P[e+1][1]; if(za===zb) continue; if(za>zb){ let t=za;za=zb;zb=t; t=xa;xa=xb;xb=t; }
+      const j0=Math.max(0,Math.ceil((za-z0)/TS)), j1=Math.min(TN,Math.ceil((zb-z0)/TS)-1);
+      for(let j=j0;j<=j1;j++){ const zz=z0+j*TS, xx=xa+(xb-xa)*(zz-za)/(zb-za); let r=rows.get(j); if(!r){ r=[]; rows.set(j,r); } r.push(xx); }
+    }
+    for(const [j,r] of rows){ r.sort((u,v)=>u-v); for(let m=0;m+1<r.length;m+=2){ const i0=Math.max(0,Math.ceil((r[m]-x0)/TS)), i1=Math.min(TN,Math.floor((r[m+1]-x0)/TS)); for(let i=i0;i<=i1;i++) ci[j*n+i]=k; } }
+  }
+  const pos=new Float32Array(n*n*3), nor=new Float32Array(n*n*3), col=new Float32Array(n*n*3), uv=new Float32Array(n*n*2);
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+    const x=x0+i*TS,z=z0+j*TS,h=th(x,z),id=j*n+i;
+    pos[id*3]=x; pos[id*3+1]=h; pos[id*3+2]=z;
+    let nx=(th(x-TS,z)-th(x+TS,z))/(2*TS), nz=(th(x,z-TS)-th(x,z+TS))/(2*TS); const nl=Math.hypot(nx,1,nz); nor[id*3]=nx/nl; nor[id*3+1]=1/nl; nor[id*3+2]=nz/nl;
+    const c=ci[id]>=0?cols[ci[id]]:GROUND_RGB; col[id*3]=c[0]; col[id*3+1]=c[1]; col[id*3+2]=c[2];
+    uv[id*2]=(x-x0)/S; uv[id*2+1]=1-(z-z0)/S; if(h<terrMinH) terrMinH=h;
+  }
+  const idx=new Uint16Array(TN*TN*6); let q=0;
+  for(let j=0;j<TN;j++)for(let i=0;i<TN;i++){ const a=j*n+i,b=a+1,c=a+n,d=c+1; idx[q++]=a; idx[q++]=d; idx[q++]=b; idx[q++]=a; idx[q++]=c; idx[q++]=d; }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setAttribute('normal',new THREE.BufferAttribute(nor,3));
+  g.setAttribute('color',new THREE.BufferAttribute(col,3)); g.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  g.setIndex(new THREE.BufferAttribute(idx,1)); g.computeBoundingSphere();
+  return new THREE.Mesh(g,matTerrain);
+}
+
+function buildTile(T,data){
+  const els=data.elements||[];
+  const x0=T.i*S,z0=T.j*S,x1=x0+S,z1=z0+S;
+  const inT=(x,z)=>x>=x0&&x<x1&&z>=z0&&z<z1;
+  const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true);
+  const roadWays=[],railWays=[],nameWays=[],areaWays=[],bldWays=[],waterLines=[],treeNodes=[],sigNodes=[],stopNodes=[];
+  const RAILOK={rail:1,tram:1,light_rail:1,narrow_gauge:1}, isBr=tg=>!!(tg.bridge&&tg.bridge!=='no');
+  for(const el of els){
+    const tg=el.tags||{};
+    if(el.type==='node'){
+      if(typeof el.lat!=='number') continue;
+      const p=proj(el.lat,el.lon); if(!inT(p[0],p[1])) continue;
+      if(tg.natural==='tree') treeNodes.push(p);
+      else if(tg.highway==='traffic_signals') sigNodes.push(p);
+      else if(tg.highway==='bus_stop'||tg.public_transport==='platform') stopNodes.push({p,name:tg.name||tg['name:ru']||''});
+    }else if(el.type==='way'&&el.geometry&&el.geometry.length>1){
+      const pts=el.geometry.filter(g=>g&&typeof g.lat==='number').map(g=>proj(g.lat,g.lon)); if(pts.length<2) continue;
+      if(tg.highway&&ROAD[tg.highway]){ if(tg.tunnel==='yes'||tg.tunnel==='building_passage'||tg.covered==='yes') continue; roadWays.push({id:el.id,tg,pts,cut:el.cut}); }
+      else if(tg._nm){ if(tg.name) nameWays.push({name:tg.name,pts}); }
+      else if(tg.railway&&RAILOK[tg.railway]){ if(tg.tunnel==='yes'||tg.covered==='yes') continue; railWays.push({id:el.id,tg,pts,cut:el.cut}); }
+      else if(tg.building&&tg.building!=='no') bldWays.push({id:el.id,tg,pts});
+      else if(tg.waterway) waterLines.push({id:el.id,tg,pts});
+      else { const st=areaStyle(tg); const cl=pts[0][0]===pts[pts.length-1][0]&&pts[0][1]===pts[pts.length-1][1]; if(st&&cl&&pts.length>3) areaWays.push({id:el.id,pts,st}); }
+    }
+  }
+  const runsOf=pts=>{ const runs=[]; let run=null; for(let i=0;i<pts.length-1;i++){ const mx=(pts[i][0]+pts[i+1][0])/2,mz=(pts[i][1]+pts[i+1][1])/2; if(inT(mx,mz)){ if(!run){run=[pts[i]];runs.push(run);} run.push(pts[i+1]); } else run=null; } return runs; };
+
+  // --- реки/каналы (на высоте земли); площадные объекты рисуются цветом на мэше рельефа ---
+  for(const w of waterLines){
+    const ww=w.tg.waterway==='river'?18:w.tg.waterway==='canal'?9:3;
+    for(const run of runsOf(groundLine(w.pts,12))) ribbon(vc,run,ww,0.062,hexc(0x4a7ea6));
+  }
+  const terrMesh=buildTerrainMesh(T,areaWays);
+  // --- дороги (с мостами, тротуарами и разметкой) ---
+  const lampRuns=[], vtx=new Map();
+  const MAJ={motorway:2,trunk:2,primary:2,secondary:2,tertiary:1}, TOP={motorway:1,trunk:1,primary:1,secondary:1};
+  const addNames=(run,name)=>{ for(let i=0;i<run.length-1;i++) addNameSeg({x1:run[i][0],z1:run[i][1],x2:run[i+1][0],z2:run[i+1][1],name,tk:T.key},T); };
+  for(const r of roadWays){
+    const hwT=r.tg.highway, [bw,rank]=ROAD[hwT]; let w=bw;
+    const tw=parseFloat(r.tg.width), ln=parseFloat(r.tg.lanes);
+    if(rank>=1){ if(tw>2&&tw<30) w=Math.max(tw,3); else if(ln>=1) w=Math.max(w,Math.min(ln,6)*3.3); }
+    const br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,BRH[hwT]||5.5):groundLine(r.pts,12);
+    const y=0.07+rank*0.025, col=roadColor(hwT,rank);
+    for(const run of runsOf(P)){
+      if(run.length<2) continue;
+      if(rank>=2&&!br) ribbon(vc,run,w+3.6,0.066,[0.60,0.59,0.57]);
+      const e=ribbon(vc,run,w,y,col);
+      if(br&&e){ bridgeBody(vc,e,[.55,.54,.52],[.70,.69,.66]); bridgePillars(vc,run,w,r.id,inT); }
+      if(rank>=3&&w>=7) for(const sg of [-1,1]) ribbon(vc,offsetLine(run,sg*(w/2-0.45)),0.14,y+0.025,[0.88,0.88,0.84]);
+      if(data.proc&&rank>=1) for(let k=0;k<run.length;k++){
+        const key=Math.round(run[k][0]*2)+','+Math.round(run[k][1]*2); let v=vtx.get(key);
+        if(!v){ v={x:run[k][0],z:run[k][1],deg:0,maj:0,top:0}; vtx.set(key,v); }
+        const dg=(k===0||k===run.length-1)?1:2; v.deg+=dg; if(MAJ[hwT]) v.maj+=dg; if(TOP[hwT]) v.top+=dg;
+      }
+      if(rank>=2&&w>=6){
+        for(let i=0;i<run.length-1;i++){
+          const a=run[i],b=run[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<7) continue;
+          const ux=dx/len,uz=dz/len, ha=a[2]||0, hb=b[2]||0;
+          for(let t=1.5;t+3<len-1.5;t+=8) ribbon(vc,[[a[0]+ux*t,a[1]+uz*t,ha+(hb-ha)*t/len],[a[0]+ux*(t+3),a[1]+uz*(t+3),ha+(hb-ha)*(t+3)/len]],0.18,y+0.03,[0.9,0.9,0.84]);
+        }
+      }
+      if(rank>=1) for(let i=0;i<run.length-1;i++) addSeg({x1:run[i][0],z1:run[i][1],x2:run[i+1][0],z2:run[i+1][1],h1:run[i][2]||0,h2:run[i+1][2]||0,hw:w/2,id:r.id,tk:T.key,rank},T);
+      if(rank>=2) lampRuns.push({run,hw:w/2,id:r.id,rank,br});
+      if(r.tg.name) addNames(run,String(r.tg.name));
+    }
+  }
+  for(const nw of nameWays) for(const run of runsOf(nw.pts)) addNames(run,nw.name);
+  // --- железная дорога и трамвай ---
+  for(const r of railWays){
+    const tram=r.tg.railway==='tram'||r.tg.railway==='light_rail', br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,7):groundLine(r.pts,12);
+    for(const run of runsOf(P)){
+      if(run.length<2) continue;
+      if(!tram){
+        const e=ribbon(vc,run,3.6,0.09,[.46,.43,.39]);
+        if(br&&e){ bridgeBody(vc,e,[.5,.5,.48],[.62,.62,.6]); bridgePillars(vc,run,4,r.id,inT); }
+        sleepers(vc,run);
+      }
+      for(const sg of [-1,1]) ribbon(vc,offsetLine(run,sg*(tram?0.76:0.72)),0.12,0.25,[.58,.59,.61]);
+    }
+  }
+  // --- здания ---
+  for(const b of bldWays){
+    let p=cleanPts(b.pts); if(p.length>1&&p[0][0]===p[p.length-1][0]&&p[0][1]===p[p.length-1][1]) p.pop();
+    if(p.length<3||p.length>400) continue;
+    let cx=0,cz=0; for(const q of p){cx+=q[0];cz+=q[1];} cx/=p.length; cz/=p.length;
+    if(!inT(cx,cz)) continue;
+    let A=0; for(let i=0;i<p.length;i++){ const q=p[i],r=p[(i+1)%p.length]; A+=q[0]*r[1]-r[0]*q[1]; }
+    A/=2; if(Math.abs(A)<4) continue; if(A<0){ p=p.slice().reverse(); }
+    const rng=mulberry32(b.id|0), h=bHeight(b.tg,rng);
+    const mh=Math.max(0,Math.min(parseFloat(b.tg.min_height)||0,h-1));
+    let tmin=1e9,tmax=-1e9; for(const q of p){ const tq=th(q[0],q[1]); if(tq<tmin)tmin=tq; if(tq>tmax)tmax=tq; }
+    const yb=mh>0?tmax+mh:tmin-0.4, yt=tmax+h;
+    let wc=PAL[Math.floor(rng()*PAL.length)];
+    if(b.tg['building:colour']){ try{ const c=new THREE.Color(b.tg['building:colour']); wc=[c.r,c.g,c.b]; }catch(e){} }
+    const rf=ROOFS[Math.floor(rng()*ROOFS.length)], rc=[rf[0],rf[1],rf[2]];
+    let acc=0;
+    for(let k=0;k<p.length;k++){
+      const a=p[k],c=p[(k+1)%p.length],dx=c[0]-a[0],dz=c[1]-a[1],len=Math.hypot(dx,dz); if(len<0.05) continue;
+      const nrm=[dz/len,0,-dx/len], u0=acc/6,u1=(acc+len)/6,v1=(yt-yb)/3.2;
+      bl.quad([a[0],yb,a[1]],[c[0],yb,c[1]],[c[0],yt,c[1]],[a[0],yt,a[1]],wc,{nrm},[u0,0],[u1,0],[u1,v1],[u0,v1]);
+      acc+=len;
+    }
+    let faces=null; try{ faces=THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(q[0],q[1])),[]); }catch(e){}
+    if(faces){ const ru=[0.04,0.96]; for(const f of faces) bl.tri([p[f[0]][0],yt,p[f[0]][1]],[p[f[1]][0],yt,p[f[1]][1]],[p[f[2]][0],yt,p[f[2]][1]],rc,UP,ru,ru,ru); }
+    let mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9; for(const q of p){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mnz)mnz=q[1]; if(q[1]>mxz)mxz=q[1]; }
+    const item={p,minx:mnx,maxx:mxx,minz:mnz,maxz:mxz,tk:T.key};
+    for(let gx=Math.floor(mnx/CS);gx<=Math.floor(mxx/CS);gx++)for(let gz=Math.floor(mnz/CS);gz<=Math.floor(mxz/CS);gz++) gAdd(bldGrid,gx,gz,item,T,T.bc);
+  }
+  // --- деревья ---
+  let treeCount=0; const TREECAP=isTouch?700:1500;
+  // деревья только внутри парков, лесов, газонов, кладбищ и садов (не вдоль дорог)
+  for(const a of areaWays){
+    if(!a.st.tree) continue;
+    let mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9; for(const q of a.pts){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mnz)mnz=q[1]; if(q[1]>mxz)mxz=q[1]; }
+    const ix0=Math.max(mnx,x0),ix1=Math.min(mxx,x1),iz0=Math.max(mnz,z0),iz1=Math.min(mxz,z1); if(ix1<=ix0||iz1<=iz0) continue;
+    const n=Math.min(900,Math.ceil((ix1-ix0)*(iz1-iz0)*a.st.tree)), rng=mulberry32((a.id*31+T.i*7919+T.j*104729)|0);
+    for(let k=0;k<n&&treeCount<TREECAP;k++){
+      const x=ix0+rng()*(ix1-ix0), z=iz0+rng()*(iz1-iz0);
+      if(!pip(x,z,a.pts)||pointInBuilding(x,z)||nearRoad(x,z,1.8,0)) continue;
+      treeCount++; addTree(vc,fo,x,z,rng);
+    }
+  }
+  // --- уличные фонари вдоль автомобильных дорог ---
+  { let lampCount=0; const LAMPCAP=isTouch?260:520, GH=[0.35,0.37,0.4], HC=[0.9,0.9,0.85], WH=[1,1,1];
+    for(const L of lampRuns){
+      const step=L.rank>=5?40:L.rank>=3?34:30, both=L.rank>=4, run=L.run, off=L.br?Math.max(0.4,L.hw-0.4):L.hw+1.3, H=L.rank>=4?9:7;
+      let acc=0, next=10+((L.id|0)%7), n=0;
+      for(let i=0;i<run.length-1&&lampCount<LAMPCAP;i++){
+        const a=run[i],b=run[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<0.5) continue;
+        const ux=dx/len,uz=dz/len,nx=-uz,nz=ux;
+        while(next<=acc+len&&lampCount<LAMPCAP){
+          const t=(next-acc)/len, cx=a[0]+dx*t, cz=a[1]+dz*t, deck=(a[2]||0)+((b[2]||0)-(a[2]||0))*t;
+          const sides=both?[-1,1]:[(n&1)?1:-1]; n++; next+=step;
+          for(const sg of sides){
+            const px=cx+nx*sg*off, pz=cz+nz*sg*off; if(!inT(px,pz)||pointInBuilding(px,pz)) continue;
+            if(!L.br&&nearRoad(px,pz,0.9,L.id)) continue;
+            const gy=(L.br?deck+0.15:th(px,pz))-0.05, ax=-nx*sg, az=-nz*sg, rot=Math.atan2(ax,az);
+            addBox(vc,px,gy,pz,0.16,H,0.16,GH,0);
+            addBox(vc,px+ax*0.9,gy+H-0.12,pz+az*0.9,0.1,0.1,1.9,GH,rot);
+            const hx=px+ax*1.75, hz=pz+az*1.75;
+            addBox(lh,hx,gy+H-0.2,hz,0.34,0.12,0.7,HC,rot);
+            const gg=(x,z)=>(L.br?deck+0.3:th(x,z)+0.3), R=7;
+            gl.quad([hx-R,gg(hx-R,hz-R),hz-R],[hx+R,gg(hx+R,hz-R),hz-R],[hx+R,gg(hx+R,hz+R),hz+R],[hx-R,gg(hx-R,hz+R),hz+R],WH,UP,[0,0],[1,0],[1,1],[0,1]);
+            lampCount++;
+          }
+        }
+        acc+=len;
+      }
+    }
+  }
+  // --- вспомогательное: положение рядом с дорогой ---
+  function roadSide(p,off){
+    const ns=nearestSeg(p[0],p[1],30); let ang=0,px=p[0],pz=p[1],nx=1,nz=0,side=1;
+    if(ns){
+      const dx=ns.seg.x2-ns.seg.x1,dz=ns.seg.z2-ns.seg.z1,l=Math.hypot(dx,dz)||1,ux=dx/l,uz=dz/l; ang=Math.atan2(ux,uz);
+      nx=-uz;nz=ux; const dd=(p[0]-ns.x)*nx+(p[1]-ns.z)*nz; side=dd>=0?1:-1; if(Math.abs(dd)<0.5) side=1;
+      px=ns.x+nx*side*(ns.seg.hw+off); pz=ns.z+nz*side*(ns.seg.hw+off);
+    }
+    return {px,pz,ang,nx:nx*side,nz:nz*side};
+  }
+  // --- светофоры (если реальных данных нет — на перекрёстках крупных дорог) ---
+  if(data.proc){
+    const ch=[]; for(const v of vtx.values()){
+      if(ch.length>=24) break; if(!(v.deg>=3&&v.maj>=3&&v.top>=1&&inT(v.x,v.z))) continue;
+      if(ch.some(q=>Math.hypot(q.x-v.x,q.z-v.z)<45)||sigNodes.some(q=>Math.hypot(q[0]-v.x,q[1]-v.z)<30)) continue;
+      ch.push(v); sigNodes.push([v.x,v.z]);
+    }
+  }
+  { const k=[]; for(const st of stopNodes){ if(!k.some(q=>Math.hypot(q.p[0]-st.p[0],q.p[1]-st.p[1])<14)) k.push(st); } stopNodes.length=0; for(const q of k) stopNodes.push(q); }
+  const uvLamp=(L)=>[0.5,1-(L+0.5)/3];
+  for(const p of sigNodes){
+    const r=roadSide(p,0.9), gy=th(r.px,r.pz), hy=gy+4.4, headCol=[0.12,0.12,0.13];
+    { const nz=nearestSeg(p[0],p[1],30);
+      if(nz&&!(nz.seg.h1-th(nz.x,nz.z)>0.3)){
+        const sg=nz.seg,dx=sg.x2-sg.x1,dz=sg.z2-sg.z1,l=Math.hypot(dx,dz)||1,ux=dx/l,uz=dz/l,nx=-uz,nzz=ux,cx=nz.x+ux*(sg.hw+4),cz=nz.z+uz*(sg.hw+4),yy=0.07+sg.rank*0.025+0.03;
+        for(let j=0;j*1.1<sg.hw*2-0.8;j++){
+          const lat=-sg.hw+0.8+j*1.1, ax=cx-ux*1.5+nx*lat, az=cz-uz*1.5+nzz*lat, bx=cx+ux*1.5+nx*lat, bz=cz+uz*1.5+nzz*lat;
+          ribbon(vc,[[ax,az,th(ax,az)],[bx,bz,th(bx,bz)]],0.5,yy,[.9,.9,.87]);
+        }
+      } }
+    addBox(vc,r.px,gy,r.pz,0.16,5.2,0.16,[0.35,0.36,0.38],0);
+    addBox(vc,r.px,hy-0.75,r.pz,0.46,1.5,0.46,headCol,r.ang);
+    const sa=Math.sin(r.ang),ca=Math.cos(r.ang);
+    const dirs=[[sa,ca,la],[-sa,-ca,la],[ca,-sa,lb],[-ca,sa,lb]];
+    for(const [dx,dz,mb] of dirs){
+      const cx=r.px+dx*0.25, cz=r.pz+dz*0.25, tx=-dz*0.15, tz=dx*0.15;
+      for(let L=0;L<3;L++){
+        const yc=hy+(L===0?0.45:L===1?0:-0.45);
+        const uv=uvLamp(L);
+        mb.quad([cx-tx,yc-0.15,cz-tz],[cx+tx,yc-0.15,cz+tz],[cx+tx,yc+0.15,cz+tz],[cx-tx,yc+0.15,cz-tz],[1,1,1],{nrm:[dx,0,dz]},uv,uv,uv,uv);
+      }
+    }
+  }
+  // --- остановки ---
+  for(const st of stopNodes){
+    const r=roadSide(st.p,1.2), gy=th(r.px,r.pz), sa=Math.sin(r.ang),ca=Math.cos(r.ang);
+    addBox(vc,r.px,gy,r.pz,0.1,3.0,0.1,[0.4,0.42,0.45],0);
+    addBox(vc,r.px,gy+2.45,r.pz,0.55,0.55,0.05,[0.12,0.42,0.78],r.ang);
+    addBox(vc,r.px,gy+2.62,r.pz,0.34,0.2,0.07,[1,1,1],r.ang);
+    const cx=r.px+r.nx*1.7, cz=r.pz+r.nz*1.7;
+    addBox(vc,cx,gy+2.3,cz,1.6,0.1,3.4,[0.23,0.29,0.36],r.ang);
+    addBox(vc,cx+r.nx*0.7,gy+0.1,cz+r.nz*0.7,0.06,2.2,3.2,[0.45,0.62,0.7],r.ang);
+    for(const e of [-1.5,1.5]) addBox(vc,cx+sa*e,gy,cz+ca*e,0.1,2.4,0.1,[0.35,0.37,0.4],0);
+    addBox(vc,cx+r.nx*0.35,gy,cz+r.nz*0.35,0.5,0.45,1.6,[0.5,0.35,0.2],r.ang);
+    T.stops.push({x:st.p[0],z:st.p[1],name:st.name});
+  }
+  // --- сборка ---
+  const g=new THREE.Group();
+  for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
+  T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; if(satEnabled&&terrMesh) loadSat(T,terrMesh);
+}
+
+/* =====================  ТЕЛЕПОРТ / КООРДИНАТЫ  ===================== */
+function setStatus(s){ $('status').textContent=s||''; }
+function parseCoords(str){
+  let s=String(str).trim().replace(/°/g,'');
+  let m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)||s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if(!m) m=s.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*(?:[;,]|\s)\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+  if(!m) return null;
+  let a=parseFloat(m[1].replace(',','.')), b=parseFloat(m[2].replace(',','.'));
+  if(Math.abs(a)>90&&Math.abs(b)<=90){ const t=a;a=b;b=t; }
+  if(Math.abs(a)>85||Math.abs(b)>180) return null;
+  return [a,b];
+}
+async function geocode(q){
+  const r=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru&q='+encodeURIComponent(q));
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const d=await r.json(); if(!d.length) return null; return [parseFloat(d[0].lat),parseFloat(d[0].lon),d[0].display_name];
+}
+const rev={t:0,lat:0,lon:0,set:false,pending:false,road:'',district:'',city:''};
+async function reverseGeo(la,lo){
+  rev.pending=true; rev.t=performance.now(); rev.lat=la; rev.lon=lo; rev.set=true; const g=gen;
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&addressdetails=1&accept-language=ru&lat='+la.toFixed(5)+'&lon='+lo.toFixed(5));
+    if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json(), a=j.address||{};
+    if(g!==gen) return;
+    rev.road=a.road||a.pedestrian||a.footway||a.cycleway||a.path||'';
+    rev.district=a.suburb||a.city_district||a.borough||a.neighbourhood||a.quarter||'';
+    rev.city=a.city||a.town||a.village||a.municipality||a.county||'';
+  }catch(e){} finally{ rev.pending=false; }
+}
+function teleport(la,lo){
+  gen++; for(const ac of inflight) try{ac.abort();}catch(e){} inflight.clear();
+  for(const t of [...tiles.values()]) removeTile(t);
+  buildQ.length=0; rawCache.clear(); enrCache.clear(); roadGrid.clear(); bldGrid.clear(); nameGrid.clear(); ownedAreas.clear(); demBase=null; demInit=null; demFailed=false; nodeMemo.clear(); terrMinH=0; rev.set=false; rev.road=rev.district=rev.city='';
+  setOrigin(la,lo); bus.x=bus.z=0; bus.y=0; bus.pitch=0; bus.roll=0; bus.h=0; bus.v=0; bus.steer=0; needSnap=true; snapCam=true;
+  try{ history.replaceState(null,'','#'+la.toFixed(5)+','+lo.toFixed(5)); }catch(e){}
+  setStatus('Телепорт: '+la.toFixed(5)+', '+lo.toFixed(5)); pump();
+}
+async function goInput(){
+  const q=$('coord').value.trim(); if(!q) return;
+  const c=parseCoords(q);
+  if(c){ teleport(c[0],c[1]); $('coord').blur(); return; }
+  setStatus('Ищу «'+q+'»…');
+  try{ const r=await geocode(q); if(!r){ setStatus('Ничего не найдено'); return; } teleport(r[0],r[1]); setStatus('Найдено: '+(r[2]||'').slice(0,80)); $('coord').blur(); }
+  catch(e){ setStatus('Ошибка поиска: '+(e.message||e)); }
+}
+$('go').addEventListener('click',goInput);
+$('coord').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); goInput(); } });
+{ const sel=$('preset'); PRESETS.forEach((p,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=p[0]; sel.appendChild(o); });
+  sel.addEventListener('change',()=>{ const p=PRESETS[+sel.value]; if(p&&p[1]){ $('coord').value=p[1][0]+', '+p[1][1]; teleport(p[1][0],p[1][1]); } sel.value=0; sel.blur(); }); }
+$('src').addEventListener('change',()=>{ srcNote=''; const ll=unproj(bus.x,bus.z); teleport(ll[0],ll[1]); $('src').blur(); });
+$('sgurl').addEventListener('change',()=>{ srcNote=''; if($('src').value==='streets'){ const ll=unproj(bus.x,bus.z); teleport(ll[0],ll[1]); } $('sgurl').blur(); });
+$('range').addEventListener('change',e=>{ range=+e.target.value; scene.fog.far=S*range*1.2+100; });
+scene.fog.far=S*range*1.2+100;
+function rebuildAll(){ updTerrSettings(); nodeMemo.clear(); terrMinH=0; for(const t of tiles.values()){ clearTileContent(t); t.state='queued'; t.tries=0; } }
+$('terr').addEventListener('change',()=>{ rebuildAll(); $('terr').blur(); });
+$('exag').addEventListener('change',()=>{ rebuildAll(); $('exag').blur(); });
+$('smooth').addEventListener('change',()=>{ SMOOTH=+$('smooth').value||0; demProc.clear(); nodeMemo.clear(); if(demBase!==null){ const b=reliefAbs(0,0); if(b===b) demBase=b; } rebuildAll(); $('smooth').blur(); });
+updTerrSettings();
+$('sat').addEventListener('change',()=>{ satEnabled=!!$('sat').checked; for(const t of tiles.values()) if(t.terrMesh){ if(satEnabled&&!t.satMat) loadSat(t,t.terrMesh); applySat(t); } $('sat').blur(); });
+$('saturl').addEventListener('change',()=>{ satCache.clear(); satNote=''; for(const t of tiles.values()) if(t.terrMesh){ if(t.satMat){ t.satMat.map.dispose(); t.satMat.dispose(); t.satMat=null; } applySat(t); loadSat(t,t.terrMesh); } $('saturl').blur(); });
+let todDrag=false;
+$('tod').addEventListener('input',()=>{ tod=parseFloat($('tod').value)||0; });
+$('tod').addEventListener('pointerdown',()=>{ todDrag=true; }); addEventListener('pointerup',()=>{ todDrag=false; });
+$('tspd').addEventListener('change',()=>{ todSpeed=parseFloat($('tspd').value)||0; $('tspd').blur(); });
+$('shad').checked=shadowsOn; $('shad').addEventListener('change',()=>{ shadowsOn=!!$('shad').checked; $('shad').blur(); });
+$('tod').value=tod;
+{ const m0=new Date().getMonth(); $('mon').value=m0; }
+$('mon').addEventListener('change',()=>{ DOY=MONTH_D[+$('mon').value]+15; $('mon').blur(); });
+$('night').addEventListener('click',()=>{toggleNight();$('night').blur();});
+$('cam').addEventListener('click',()=>{cycleCam();$('cam').blur();});
+$('ptoggle').addEventListener('click',()=>$('panel').classList.toggle('collapsed'));
+if(innerWidth<700) $('panel').classList.add('collapsed');
+function snapToRoad(){
+  const ns=nearestSeg(0,0,260); if(!ns) return false;
+  const s=ns.seg; bus.x=ns.x; bus.z=ns.z; bus.h=Math.atan2(s.x2-s.x1,s.z2-s.z1); bus.y=(s.h1||0)+((s.h2||0)-(s.h1||0))*ns.t; bus.v=0; snapCam=true; return true;
+}
+
+/* =====================  ВВОД  ===================== */
+const keys={}, touch={};
+function cycleCam(){ camMode=(camMode+1)%3; camera.near=camMode===2?0.3:1.5; camera.up.set(0,1,0); camera.updateProjectionMatrix(); snapCam=true; }
+let camMode=0, snapCam=true, camYaw=0, camPitch=0.3, camDist=19, lastDrag=0;
+addEventListener('keydown',e=>{
+  if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  keys[e.code]=true;
+  if(e.code==='KeyC') cycleCam(); if(e.code==='KeyN') toggleNight();
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup',e=>{ keys[e.code]=false; });
+addEventListener('blur',()=>{ for(const k in keys) keys[k]=false; });
+document.querySelectorAll('.tb').forEach(b=>{
+  const k=b.dataset.k;
+  if(k==='cam'){ b.addEventListener('pointerdown',e=>{ e.preventDefault(); cycleCam(); }); return; }
+  const on=e=>{ e.preventDefault(); touch[k]=true; b.classList.add('on'); try{b.setPointerCapture(e.pointerId);}catch(_){} };
+  const off=()=>{ touch[k]=false; b.classList.remove('on'); };
+  b.addEventListener('pointerdown',on); b.addEventListener('pointerup',off); b.addEventListener('pointercancel',off); b.addEventListener('lostpointercapture',off);
+  b.addEventListener('contextmenu',e=>e.preventDefault());
+});
+function showTouch(v){ $('touch').style.display=v?'block':'none'; }
+showTouch(isTouch); $('showtouch').checked=isTouch;
+$('showtouch').addEventListener('change',e=>showTouch(e.target.checked));
+// камера: перетаскивание / колесо / щипок
+{ const pts=new Map(); let pd=0;
+  canvas.addEventListener('pointerdown',e=>{ pts.set(e.pointerId,[e.clientX,e.clientY]); try{canvas.setPointerCapture(e.pointerId);}catch(_){} if(pts.size===2){ const a=[...pts.values()]; pd=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]); } });
+  canvas.addEventListener('pointermove',e=>{
+    const p=pts.get(e.pointerId); if(!p) return;
+    const dx=e.clientX-p[0],dy=e.clientY-p[1]; p[0]=e.clientX;p[1]=e.clientY;
+    if(pts.size===1){ camYaw-=dx*0.006; camPitch=Math.max(0.05,Math.min(1.3,camPitch+dy*0.005)); lastDrag=performance.now(); }
+    else if(pts.size===2){ const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]); if(pd>0) camDist=Math.max(8,Math.min(80,camDist*pd/d)); pd=d; }
+  });
+  const up=e=>{ pts.delete(e.pointerId); pd=0; };
+  canvas.addEventListener('pointerup',up); canvas.addEventListener('pointercancel',up);
+  canvas.addEventListener('wheel',e=>{ e.preventDefault(); camDist=Math.max(8,Math.min(80,camDist*(1+e.deltaY*0.0012))); },{passive:false});
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+}
+
+/* =====================  ФИЗИКА  ===================== */
+const CPTS=[[1.15,5.9],[-1.15,5.9],[1.15,-5.9],[-1.15,-5.9],[1.15,0],[-1.15,0],[0,5.9],[0,-5.9],[1.15,3],[-1.15,3],[1.15,-3],[-1.15,-3]];
+function hitsBuilding(x,z,h){ const c=Math.cos(h),s=Math.sin(h); for(const q of CPTS){ if(pointInBuilding(x+q[0]*c+q[1]*s,z-q[0]*s+q[1]*c)) return true; } return false; }
+function physics(dt){
+  const thr=((keys.KeyW||keys.ArrowUp||touch.gas)?1:0)-((keys.KeyS||keys.ArrowDown||touch.brake)?1:0);
+  const st=((keys.KeyA||keys.ArrowLeft||touch.left)?1:0)-((keys.KeyD||keys.ArrowRight||touch.right)?1:0);
+  const hand=keys.Space||touch.hand, boost=keys.ShiftLeft||keys.ShiftRight||touch.turbo;
+  const vmax=boost?60:22;
+  bus.steer+=(st-bus.steer)*Math.min(1,(st===0?9:4.5)*dt);
+  let v=bus.v;
+  if(thr>0){ if(v<-0.2) v+=16*dt; else v+=(boost?16:6)*Math.max(0,1-v/vmax)*dt; }
+  else if(thr<0){ if(v>0.2) v-=15*dt; else v=Math.max(v-4*dt,-7); }
+  else { const fr=1.6*dt; v=Math.abs(v)<fr?0:v-Math.sign(v)*fr; }
+  if(hand){ v*=Math.exp(-3.5*dt); if(Math.abs(v)<0.1) v=0; }
+  if(v>vmax) v-=12*dt;
+  const maxSt=0.62/(1+Math.abs(v)/9)+0.06, d=bus.steer*maxSt;
+  const ox=bus.x,oz=bus.z,oh=bus.h;
+  bus.h+=v/7*Math.tan(d)*dt;
+  bus.x+=Math.sin(bus.h)*v*dt; bus.z+=Math.cos(bus.h)*v*dt;
+  if($('coll').checked&&bus.y-th(bus.x,bus.z)<2.5&&Math.abs(v)>0.05&&hitsBuilding(bus.x,bus.z,bus.h)&&!hitsBuilding(ox,oz,oh)){ bus.x=ox;bus.z=oz;bus.h=oh; v=-v*0.25; }
+  bus.v=v;
+  const sh=Math.sin(bus.h),ch=Math.cos(bus.h), lx=ch,lz=-sh;   // lx,lz — вектор «влево» автобуса
+  const g0=groundAt(bus.x,bus.z,bus.y);
+  const gf=groundAt(bus.x+sh*5.8,bus.z+ch*5.8,g0), gb=groundAt(bus.x-sh*5.8,bus.z-ch*5.8,g0);
+  const gl=groundAt(bus.x+lx*1.25,bus.z+lz*1.25,g0), gr=groundAt(bus.x-lx*1.25,bus.z-lz*1.25,g0);
+  const want=Math.max(g0,(gf+gb)/2,(gl+gr)/2);   // коробка не врезается в склон ни носом, ни кормой
+  bus.y+=(want-bus.y)*Math.min(1,14*dt);
+  const tp=Math.max(-0.5,Math.min(0.5,Math.atan2(gf-gb,11.6))), tr=Math.max(-0.35,Math.min(0.35,Math.atan2(gl-gr,2.5)));
+  bus.pitch+=(tp-bus.pitch)*Math.min(1,9*dt); bus.roll+=(tr-bus.roll)*Math.min(1,9*dt);
+  bus.v-=9.81*Math.sin(bus.pitch)*0.7*dt;   // подъём тормозит, спуск разгоняет
+}
+
+/* =====================  ЦИКЛ  ===================== */
+const clock=new THREE.Clock(); let t0=0, tHud=0, tPump=0, tHash=0, lampA=-1, lampB=-1;
+const camPos=new THREE.Vector3(), tmpV=new THREE.Vector3(), lookV=new THREE.Vector3();
+function lampState(t){ return t<8?1:t<10?2:0; }
+function updateCamera(dt){
+  const sh=Math.sin(bus.h),ch=Math.cos(bus.h);
+  if(performance.now()-lastDrag>2200){ camYaw*=Math.max(0,1-dt*1.6); camPitch+=(0.3-camPitch)*Math.min(1,dt*1.2); }
+  if(camMode===0){
+    const yaw=bus.h+Math.PI+camYaw, hd=camDist*Math.cos(camPitch), hy=2.2+bus.y+camDist*Math.sin(camPitch);
+    tmpV.set(bus.x+Math.sin(yaw)*hd,hy,bus.z+Math.cos(yaw)*hd);
+    if(snapCam) camera.position.copy(tmpV); else camera.position.lerp(tmpV,1-Math.exp(-dt*7));
+    { const gyc=th(camera.position.x,camera.position.z)+1.5; if(camera.position.y<gyc) camera.position.y=gyc; }
+    lookV.set(bus.x+sh*5,2+bus.y,bus.z+ch*5); camera.up.set(0,1,0); camera.lookAt(lookV);
+  }else if(camMode===1){
+    camera.position.set(bus.x,camDist*5+30+bus.y,bus.z); camera.up.set(sh,0,ch); camera.lookAt(bus.x,bus.y,bus.z);
+  }else{
+    const lx=0.55,lz=4.4;
+    camera.position.set(bus.x+lx*ch+lz*sh,2.55+bus.y,bus.z-lx*sh+lz*ch);
+    const yaw=bus.h+camYaw*0.6; camera.up.set(0,1,0); camera.lookAt(camera.position.x+Math.sin(yaw)*20,2.3-camPitch*3+0.9+bus.y,camera.position.z+Math.cos(yaw)*20);
+  }
+  snapCam=false;
+}
+let tTod=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05); t0+=dt;
+  physics(dt);
+  busGroup.position.set(bus.x,0.05+bus.y,bus.z); busGroup.rotation.y=bus.h; busGroup.rotation.x=-bus.pitch; busGroup.rotation.z=bus.roll;
+  ground.position.set(bus.x,terrMinH-1,bus.z); groundTex.offset.x=((bus.x-2500)/10)%1; groundTex.offset.y=((-bus.z-2500)/10)%1;
+  if(todSpeed>0){ tod=(tod+dt*todSpeed/3600)%24; }
+  applyTime();
+  { const tx=Math.round(bus.x*4)/4, tz=Math.round(bus.z*4)/4, ty=bus.y; sun.target.position.set(tx,ty,tz); sun.position.set(tx+sunDir.x*260,ty+sunDir.y*260,tz+sunDir.z*260); }
+  updateCamera(dt);
+  stars.position.copy(camera.position); sunDisc.position.set(camera.position.x+sunDir.x*2000,camera.position.y+sunDir.y*2000,camera.position.z+sunDir.z*2000);
+  tTod+=dt; if(tTod>0.25){ tTod=0; const hh=Math.floor(tod), mm=Math.floor((tod-hh)*60); $('todl').textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); { const lat=unproj(bus.x,bus.z)[0], noon=90-Math.abs(lat-sunDecl()); $('sunalt').textContent='☀ сейчас '+sunElDeg.toFixed(0)+'°, в полдень '+noon.toFixed(0)+'°'; } if(!todDrag) $('tod').value=tod; }
+  // светофоры
+  const cyc=t0%20, sA=lampState(cyc), sB=lampState((cyc+10)%20);
+  if(sA!==lampA){ lampA=sA; lampTexA.offset.x=sA/3; } if(sB!==lampB){ lampB=sB; lampTexB.offset.x=sB/3; }
+  // сборка тайлов (по одному за кадр)
+  if(buildQ.length){
+    const j=buildQ.shift();
+    if(j.g===gen&&tiles.get(j.t.key)===j.t){
+      try{
+        const raw=j.raw, data={elements:j.t.enr?raw.elements.concat(j.t.enr):raw.elements,src:raw.src,proc:raw.src==='vector'&&!j.t.enr};
+        clearTileContent(j.t); buildTile(j.t,data);
+      }catch(e){ console.error(e); j.t.tries++; j.t.state=j.t.tries>2?'built':'failed'; j.t.retryAt=performance.now()+5000; }
+      if(needSnap&&snapToRoad()) needSnap=false;
+    }
+  }
+  tPump+=dt; if(tPump>0.5){ tPump=0; pump(); }
+  tHud+=dt; if(tHud>0.2){
+    tHud=0;
+    let pending=buildQ.length; for(const t of tiles.values()) if(t.state==='queued'||t.state==='loading') pending++;
+    let failed=0; for(const t of tiles.values()) if(t.state==='failed') failed++;
+    if(pending>0) setStatus('Загрузка карты… тайлов в очереди: '+pending);
+    else if(failed>0) setStatus('Не удалось загрузить часть карты ('+(lastError||'сеть')+'). Повтор…');
+    else if($('status').textContent.startsWith('Загрузка')||$('status').textContent.startsWith('Не удалось загрузить часть')) setStatus('Карта загружена ✓'+((srcNote||satNote)?' · '+[srcNote,satNote].filter(Boolean).join(' · '):''));
+    if(needSnap&&pending===0&&tiles.size>0&&failed===0){ snapToRoad(); needSnap=false; }
+    $('speed').textContent=Math.round(Math.abs(bus.v)*3.6);
+    const ll=unproj(bus.x,bus.z); $('pos').textContent=ll[0].toFixed(5)+', '+ll[1].toFixed(5)+'  ·  уклон '+Math.round(Math.tan(bus.pitch)*100)+'%';
+    let nm='',bd=35; for(const t of tiles.values()) for(const s of t.stops){ const d=Math.hypot(s.x-bus.x,s.z-bus.z); if(d<bd){bd=d;nm=s.name||'Автобусная остановка';} }
+    $('stopname').textContent=nm?('🚏 '+nm):'';
+    const sg=nearestName(bus.x,bus.z,22), road=sg?sg.name:(rev.road||'');
+    $('w1').textContent=(bus.y-th(bus.x,bus.z)>1.5?'🌉 ':'')+(road||'Вне дороги');
+    $('w2').textContent=[rev.district,rev.city].filter(Boolean).join(', ');
+    if(!rev.pending&&performance.now()-rev.t>7000&&(!rev.set||Math.hypot((ll[1]-rev.lon)*kx,(ll[0]-rev.lat)*kz)>150)) reverseGeo(ll[0],ll[1]);
+  }
+  tHash+=dt; if(tHash>4){ tHash=0; const ll=unproj(bus.x,bus.z); try{ history.replaceState(null,'','#'+ll[0].toFixed(5)+','+ll[1].toFixed(5)); }catch(e){} }
+  renderer.render(scene,camera);
+}
+
+/* =====================  СТАРТ  ===================== */
+window.__dbg={demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
+{
+  let start=null; const h=location.hash.replace('#',''); if(h){ start=parseCoords(h); }
+  if(!start) start=[55.7558,37.6176];
+  $('coord').value=start[0]+', '+start[1];
+  teleport(start[0],start[1]);
+  animate();
+}
+})();
+</script>
+</body>
+</html>
