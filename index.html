@@ -296,13 +296,14 @@ function densify(pts,step){
 }
 // профиль моста: плавный подъём от земли до высоты H; на краях, обрезанных границей тайла, подъёма нет
 function groundLine(pts,step){ const P=densify(pts,step); for(const q of P) q.push(th(q[0],q[1])); return P; }
-function bridgeProfile(pts,cutEnds,Hfix){
+function bridgeProfile(pts,cutEnds,Hfix,jh){
   const P=densify(pts,6); let L=0; const sm=[0];
   for(let i=1;i<P.length;i++){ L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]); sm.push(L); }
-  const c0=!!(cutEnds&&cutEnds[0]), c1=!!(cutEnds&&cutEnds[1]);
+  const j0=jh&&jh[0]!=null?jh[0]:null, j1=jh&&jh[1]!=null?jh[1]:null, c0=!!(cutEnds&&cutEnds[0])||j0!==null, c1=!!(cutEnds&&cutEnds[1])||j1!==null;
   const H=(c0||c1)?Hfix:Math.min(Hfix,0.075*L+0.4), rl=H/0.14;
   const t0=th(P[0][0],P[0][1]), t1=th(P[P.length-1][0],P[P.length-1][1]);
-  for(let i=0;i<P.length;i++){ const d=Math.min(c0?1e9:sm[i],c1?1e9:L-sm[i]), r=Math.min(1,d/rl); P[i]=[P[i][0],P[i][1],t0+(t1-t0)*sm[i]/(L||1)+H*r*r*(3-2*r)]; }
+  for(let i=0;i<P.length;i++){ const d=Math.min(c0?1e9:sm[i],c1?1e9:L-sm[i]), r=Math.min(1,d/rl); let o=0; if(j0!==null&&j0>H){ const q=Math.min(1,sm[i]/40); o+=(j0-H)*(1-q*q*(3-2*q)); } if(j1!==null&&j1>H){ const q=Math.min(1,(L-sm[i])/40); o+=(j1-H)*(1-q*q*(3-2*q)); }
+    P[i]=[P[i][0],P[i][1],t0+(t1-t0)*sm[i]/(L||1)+H*r*r*(3-2*r)+o]; }
   return P;
 }
 const BRH={motorway:8,motorway_link:7,trunk:8,trunk_link:7,primary:6.5,primary_link:6,secondary:6.5,secondary_link:6,tertiary:6,tertiary_link:6,residential:5.5,service:5,pedestrian:4.5,footway:4.5,cycleway:4.5,track:4.5,unclassified:5.5,living_street:5.5,path:4.5};
@@ -781,14 +782,14 @@ function mapMvt(layer,p,type){
     if(type===3) return null; const c=p.class, sc=p.subclass; let h=null;
     if(c==='rail'||c==='transit'){
       if(p.brunnel==='tunnel'||(sc==='subway'&&p.brunnel!=='bridge')) return null;
-      const t={railway:(sc==='tram'||sc==='light_rail')?'tram':'rail'}; if(p.brunnel==='bridge') t.bridge='yes'; return {t,k:'line'};
+      const t={railway:(sc==='tram'||sc==='light_rail')?'tram':'rail'}; if(p.brunnel==='bridge') t.bridge='yes'; if(+p.layer>=1) t.layer=String(p.layer); return {t,k:'line'};
     }
     if(c==='motorway'||c==='trunk'||c==='primary'||c==='secondary'||c==='tertiary') h=c+(p.ramp==1?'_link':'');
     else if(c==='minor') h=sc==='living_street'?'living_street':sc==='pedestrian'?'pedestrian':'residential';
     else if(c==='service'||c==='busway'||c==='raceway') h='service';
     else if(c==='track') h='track';
     else if(c==='path') h=sc==='cycleway'?'cycleway':sc==='steps'?null:(sc==='pedestrian'||sc==='footway'||sc==='crossing')?'footway':'path';
-    if(!h) return null; const t={highway:h}; if(p.brunnel==='tunnel') t.tunnel='yes'; if(p.brunnel==='bridge') t.bridge='yes'; return {t,k:'line'}; }
+    if(!h) return null; const t={highway:h}; if(p.brunnel==='tunnel') t.tunnel='yes'; if(p.brunnel==='bridge') t.bridge='yes'; if(+p.layer>=1&&p.brunnel!=='tunnel') t.layer=String(p.layer); return {t,k:'line'}; }
   case 'transportation_name':{ if(type===3) return null; const c=p.class; if(c==='rail'||c==='transit'||c==='ferry'||c==='aerialway'||c==='pier') return null; const nm=p.name||p['name:ru']||p['name:latin']; return nm?{t:{name:String(nm),_nm:1},k:'line'}:null; }
   case 'water': return {t:{natural:'water'},k:'poly'};
   case 'waterway':{ const c=p.class; if(c!=='river'&&c!=='canal'&&c!=='stream') return null; return {t:{waterway:c},k:'line'}; }
@@ -1008,7 +1009,7 @@ async function loadSat(T,mesh){
   if(T.satMat){ T.satMat.map.dispose(); T.satMat.dispose(); }
   T.satMat=new THREE.MeshLambertMaterial({map:tex}); applySat(T);
 }
-const GROUND_RGB=hexc(0x86996f);
+const GROUND_RGB=hexc(0x908c80);
 function terrOn(){ return terrEnabled&&demBase!==null&&!demFailed; }
 function updTerrSettings(){ terrEnabled=!!$('terr').checked; const v=parseFloat($('exag').value); EXAG=v>0?v:1; SMOOTH=+$('smooth').value||0; }
 async function fetchDemTile(tx,ty){
@@ -1150,7 +1151,7 @@ function buildTile(T,data){
   const inT=(x,z)=>x>=x0&&x<x1&&z>=z0&&z<z1;
   const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true);
   const roadWays=[],railWays=[],nameWays=[],areaWays=[],bldWays=[],waterLines=[],treeNodes=[],sigNodes=[],stopNodes=[];
-  const RAILOK={rail:1,tram:1,light_rail:1,narrow_gauge:1}, isBr=tg=>!!(tg.bridge&&tg.bridge!=='no');
+  const RAILOK={rail:1,tram:1,light_rail:1,narrow_gauge:1}, isBr=tg=>!!(tg.bridge&&tg.bridge!=='no')||(+tg.layer>=1&&tg.tunnel!=='yes'&&tg.covered!=='yes');
   for(const el of els){
     const tg=el.tags||{};
     if(el.type==='node'){
@@ -1179,13 +1180,17 @@ function buildTile(T,data){
   const terrMesh=buildTerrainMesh(T,areaWays);
   // --- дороги (с мостами, тротуарами и разметкой) ---
   const lampRuns=[], vtx=new Map();
+  const bkey=q=>Math.round(q[0])+','+Math.round(q[1]), bv=new Map();
+  for(const r of roadWays){ if(!isBr(r.tg)) continue; const H=BRH[r.tg.highway]||5.5;
+    for(const q of r.pts){ const k=bkey(q); let e=bv.get(k); if(!e){ e={ids:new Set(),h:0}; bv.set(k,e); } e.ids.add(r.id); if(H>e.h) e.h=H; } }
+  const jointOf=(r,q)=>{ const e=bv.get(bkey(q)); return e&&(e.ids.size>1||!e.ids.has(r.id))?e.h:null; };
   const MAJ={motorway:2,trunk:2,primary:2,secondary:2,tertiary:1}, TOP={motorway:1,trunk:1,primary:1,secondary:1};
   const addNames=(run,name)=>{ for(let i=0;i<run.length-1;i++) addNameSeg({x1:run[i][0],z1:run[i][1],x2:run[i+1][0],z2:run[i+1][1],name,tk:T.key},T); };
   for(const r of roadWays){
     const hwT=r.tg.highway, [bw,rank]=ROAD[hwT]; let w=bw;
     const tw=parseFloat(r.tg.width), ln=parseFloat(r.tg.lanes);
     if(rank>=1){ if(tw>2&&tw<30) w=Math.max(tw,3); else if(ln>=1) w=Math.max(w,Math.min(ln,6)*3.3); }
-    const br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,BRH[hwT]||5.5):groundLine(r.pts,12);
+    const br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,BRH[hwT]||5.5,[jointOf(r,r.pts[0]),jointOf(r,r.pts[r.pts.length-1])]):groundLine(r.pts,12);
     const y=0.07+rank*0.025, col=roadColor(hwT,rank);
     for(const run of runsOf(P)){
       if(run.length<2) continue;
@@ -1193,7 +1198,7 @@ function buildTile(T,data){
       const e=ribbon(vc,run,w,y,col);
       if(br&&e){ bridgeBody(vc,e,[.55,.54,.52],[.70,.69,.66]); bridgePillars(vc,run,w,r.id,inT); }
       if(rank>=3&&w>=7) for(const sg of [-1,1]) ribbon(vc,offsetLine(run,sg*(w/2-0.45)),0.14,y+0.025,[0.88,0.88,0.84]);
-      if(data.proc&&rank>=1) for(let k=0;k<run.length;k++){
+      if(data.proc&&rank>=1&&!br) for(let k=0;k<run.length;k++){
         const key=Math.round(run[k][0]*2)+','+Math.round(run[k][1]*2); let v=vtx.get(key);
         if(!v){ v={x:run[k][0],z:run[k][1],deg:0,maj:0,top:0}; vtx.set(key,v); }
         const dg=(k===0||k===run.length-1)?1:2; v.deg+=dg; if(MAJ[hwT]) v.maj+=dg; if(TOP[hwT]) v.top+=dg;
