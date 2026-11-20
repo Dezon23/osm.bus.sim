@@ -73,7 +73,7 @@ input[type=range]{flex:1;min-width:80px}
     <h2>Настройки</h2>
     <div class="row">
       <label>Дальность загрузки
-        <select id="range" style="flex:none"><option value="1">1 (быстро)</option><option value="2">2 (дальше)</option></select>
+        <select id="range" style="flex:none"><option value="1">1 (быстро)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10 (очень далеко, тяжело)</option></select>
       </label>
     </div>
     <div class="row">
@@ -107,6 +107,20 @@ input[type=range]{flex:1;min-width:80px}
     <div class="row">
       <label>Ход времени <select id="tspd" style="flex:none"><option value="0">Стоп</option><option value="1">×1 (реальный)</option><option value="60" selected>×60</option><option value="300">×300</option><option value="1200">×1200</option></select></label>
       <label><input type="checkbox" id="shad"> Тени</label>
+    </div>
+    <h2>Эффекты освещения</h2>
+    <div class="small">Все эффекты по умолчанию выключены — они нагружают видеокарту. При включении эффектов краёв-сглаживание браузера отключается: включайте FXAA.</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px 14px">
+      <label><input type="checkbox" data-fx="ao"> Ambient Occlusion (затенение углов)</label>
+      <label><input type="checkbox" data-fx="bloom"> Свечение (Bloom)</label>
+      <label><input type="checkbox" data-fx="rays"> Лучи солнца</label>
+      <label><input type="checkbox" data-fx="tone"> Кинотон (контраст, насыщенность)</label>
+      <label><input type="checkbox" data-fx="vig"> Виньетка</label>
+      <label><input type="checkbox" data-fx="fxaa"> Сглаживание FXAA</label>
+      <label><input type="checkbox" data-fx="haze"> Атмосферная дымка</label>
+      <label><input type="checkbox" data-fx="shq"> Тени высокого качества</label>
+      <label><input type="checkbox" data-fx="chroma"> Хроматическая аберрация</label>
+      <label><input type="checkbox" data-fx="grain"> Плёночное зерно</label>
     </div>
     <div class="row">
       <button id="night">🌙 День/ночь</button>
@@ -584,6 +598,174 @@ function applyTime(){
 function toggleNight(){ tod=(tod>=6&&tod<18)?0:12; $('tod').value=tod; }
 addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 
+/* =====================  ЭФФЕКТЫ ОСВЕЩЕНИЯ (постобработка; всё выключено по умолчанию)  ===================== */
+const FX={ao:false,bloom:false,rays:false,tone:false,vig:false,fxaa:false,grain:false,chroma:false,haze:false,shq:false};
+const fxAny=()=>FX.ao||FX.bloom||FX.rays||FX.tone||FX.vig||FX.fxaa||FX.grain||FX.chroma;
+const FXU={near:{value:1.5},far:{value:2800},tan:{value:1},asp:{value:1},focal:{value:500},px:{value:new THREE.Vector2(1/1920,1/1080)}};
+const FX_VS='varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }';
+const FX_LIN='uniform float uNear; uniform float uFar; float linZ(float d){ float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }';
+const fxMat=(fs,u)=>new THREE.ShaderMaterial({uniforms:u,vertexShader:FX_VS,fragmentShader:fs,depthTest:false,depthWrite:false});
+const FX_AO_FS=FX_LIN+`
+uniform sampler2D tDepth; uniform float uTan; uniform float uAsp; uniform float uFocal; uniform vec2 uPx; varying vec2 vUv;
+vec3 vpos(vec2 uv){ float z=linZ(texture2D(tDepth,uv).r); return vec3((uv*2.-1.)*vec2(uAsp*uTan,uTan)*z,-z); }
+float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }
+void main(){
+  float d=texture2D(tDepth,vUv).r;
+  if(d>=0.99999){ gl_FragColor=vec4(1.); return; }
+  vec3 P=vpos(vUv); float z=-P.z;
+  vec2 dx=vec2(uPx.x,0.), dy=vec2(0.,uPx.y);
+  vec3 Pr=vpos(vUv+dx), Pl=vpos(vUv-dx), Pu=vpos(vUv+dy), Pd=vpos(vUv-dy);
+  vec3 vx=abs(Pr.z-P.z)<abs(P.z-Pl.z)?Pr-P:P-Pl;
+  vec3 vy=abs(Pu.z-P.z)<abs(P.z-Pd.z)?Pu-P:P-Pd;
+  vec3 N=normalize(cross(vx,vy)); if(dot(N,P)>0.) N=-N;
+  float rad=1.6; float rpx=clamp(rad*uFocal/z,2.,56.);
+  float ang=ign(gl_FragCoord.xy)*6.2831853; float occ=0.;
+  for(int i=0;i<14;i++){
+    float fi=float(i); float r=sqrt((fi+0.5)/14.); float a=ang+fi*2.39996;
+    vec2 o=vec2(cos(a),sin(a))*r*rpx*uPx;
+    vec3 V=vpos(vUv+o)-P; float dist=length(V);
+    float h=dot(N,V)/(dist+1e-4);
+    occ+=max(h-0.15,0.)*(1.-smoothstep(rad*0.5,rad*1.6,dist));
+  }
+  float ao=1.-clamp(occ/14.*2.6,0.,1.);
+  ao=mix(ao,1.,smoothstep(60.,240.,z));
+  gl_FragColor=vec4(ao,ao,ao,1.);
+}`;
+const FX_AOB_FS=FX_LIN+`
+uniform sampler2D tAO; uniform sampler2D tDepth; uniform vec2 uTexel; varying vec2 vUv;
+void main(){
+  float zc=linZ(texture2D(tDepth,vUv).r); float s=0.; float w=0.;
+  for(int y=-2;y<=2;y++){ for(int x=-2;x<=2;x++){
+    vec2 uv=vUv+vec2(float(x),float(y))*uTexel; float zs=linZ(texture2D(tDepth,uv).r);
+    float k=exp(-abs(zs-zc)/(0.1+0.02*zc)); s+=texture2D(tAO,uv).r*k; w+=k; } }
+  float a=s/max(w,1e-4); gl_FragColor=vec4(a,a,a,1.);
+}`;
+const FX_BRIGHT_FS=`uniform sampler2D tScene; uniform sampler2D tDepth; uniform float uThr; uniform vec2 uPx; varying vec2 vUv;
+void main(){
+  vec3 c=vec3(0.);
+  for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==2?-1.:1., i<2?-1.:1.)*uPx*1.5; vec2 uv=vUv+o; vec3 t=texture2D(tScene,uv).rgb;
+    if(texture2D(tDepth,uv).r<0.99999) c+=t*0.25; }
+  float l=max(c.r,max(c.g,c.b)); float k=max(l-uThr,0.)/max(l,1e-4);
+  gl_FragColor=vec4(c*k*2.2,1.);
+}`;
+const FX_BLUR_FS=`uniform sampler2D tIn; uniform vec2 uDir; varying vec2 vUv;
+void main(){
+  vec3 c=texture2D(tIn,vUv).rgb*0.2270270270;
+  c+=(texture2D(tIn,vUv+uDir*1.3846153846).rgb+texture2D(tIn,vUv-uDir*1.3846153846).rgb)*0.3162162162;
+  c+=(texture2D(tIn,vUv+uDir*3.2307692308).rgb+texture2D(tIn,vUv-uDir*3.2307692308).rgb)*0.0702702703;
+  gl_FragColor=vec4(c,1.);
+}`;
+const FX_RAYS_FS=FX_LIN+`
+uniform sampler2D tDepth; uniform vec2 uSun; uniform float uVis; uniform float uAsp; varying vec2 vUv;
+void main(){
+  vec2 dir=uSun-vUv; vec2 stp=dir/24.;
+  vec2 p=vUv+stp*fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);
+  float acc=0.; float w=1.;
+  for(int i=0;i<24;i++){
+    p+=stp; float m=1.;
+    if(p.x>0.&&p.x<1.&&p.y>0.&&p.y<1.) m=smoothstep(uFar*0.55,uFar*0.8,linZ(texture2D(tDepth,p).r));
+    acc+=m*w; w*=0.955;
+  }
+  float dist=length(dir*vec2(uAsp,1.));
+  float r=acc/24.*exp(-dist*1.8)*uVis;
+  gl_FragColor=vec4(r,r,r,1.);
+}`;
+const FX_COMP_FS=`uniform sampler2D tScene; uniform sampler2D tAO; uniform sampler2D tBloom; uniform sampler2D tRays;
+uniform float uAO; uniform float uBloom; uniform float uRays; uniform float uTone; uniform float uVig; uniform float uGrain; uniform float uChroma;
+uniform float uTime; uniform float uAsp; uniform vec3 uSunCol; varying vec2 vUv;
+vec3 aces(vec3 x){ return (x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14); }
+void main(){
+  vec3 c;
+  if(uChroma>0.5){ vec2 d=(vUv-.5)*0.007; c=vec3(texture2D(tScene,vUv+d).r,texture2D(tScene,vUv).g,texture2D(tScene,vUv-d).b); }
+  else c=texture2D(tScene,vUv).rgb;
+  if(uAO>0.5) c*=texture2D(tAO,vUv).r;
+  if(uBloom>0.5) c+=texture2D(tBloom,vUv).rgb*0.85;
+  if(uRays>0.5) c+=uSunCol*texture2D(tRays,vUv).r*0.9;
+  if(uTone>0.5){
+    c=clamp(aces(c*1.3)/0.854,0.,1.);
+    float l=dot(c,vec3(0.299,0.587,0.114)); c=mix(vec3(l),c,1.16);
+  }
+  if(uVig>0.5){ float v=length((vUv-.5)*vec2(uAsp,1.)*vec2(0.62,0.9)); c*=1.-smoothstep(0.32,0.95,v)*0.6; }
+  if(uGrain>0.5){ float g=fract(sin(dot(vUv*vec2(1731.,911.)+uTime,vec2(12.9898,78.233)))*43758.5453)-0.5; c+=g*0.07; }
+  gl_FragColor=vec4(c,1.);
+}`;
+const FX_FXAA_FS=`uniform sampler2D tIn; uniform vec2 uPx; varying vec2 vUv;
+float luma(vec3 c){ return dot(c,vec3(0.299,0.587,0.114)); }
+void main(){
+  vec3 nw=texture2D(tIn,vUv+vec2(-1.,-1.)*uPx).rgb, ne=texture2D(tIn,vUv+vec2(1.,-1.)*uPx).rgb, sw=texture2D(tIn,vUv+vec2(-1.,1.)*uPx).rgb, se=texture2D(tIn,vUv+vec2(1.,1.)*uPx).rgb, m=texture2D(tIn,vUv).rgb;
+  float lnw=luma(nw), lne=luma(ne), lsw=luma(sw), lse=luma(se), lm=luma(m);
+  float lmin=min(lm,min(min(lnw,lne),min(lsw,lse))), lmax=max(lm,max(max(lnw,lne),max(lsw,lse)));
+  vec2 dir=vec2(-((lnw+lne)-(lsw+lse)),((lnw+lsw)-(lne+lse)));
+  float red=max((lnw+lne+lsw+lse)*0.03125,1./128.);
+  float rcp=1./(min(abs(dir.x),abs(dir.y))+red);
+  dir=min(vec2(8.),max(vec2(-8.),dir*rcp))*uPx;
+  vec3 a=0.5*(texture2D(tIn,vUv+dir*(1./3.-0.5)).rgb+texture2D(tIn,vUv+dir*(2./3.-0.5)).rgb);
+  vec3 b=a*0.5+0.25*(texture2D(tIn,vUv+dir*-0.5).rgb+texture2D(tIn,vUv+dir*0.5).rgb);
+  float lb=luma(b);
+  gl_FragColor=vec4((lb<lmin||lb>lmax)?a:b,1.);
+}`;
+let FXS=null;
+function fxRT(w,h,depth){ const r=new THREE.WebGLRenderTarget(Math.max(2,w),Math.max(2,h),{minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat,depthBuffer:!!depth});
+  if(depth){ r.depthTexture=new THREE.DepthTexture(Math.max(2,w),Math.max(2,h),THREE.UnsignedIntType); r.depthTexture.minFilter=r.depthTexture.magFilter=THREE.NearestFilter; } return r; }
+function fxDispose(){ if(!FXS) return; for(const k of ['sc','ao','ao2','b1','b2','rays','comp']){ const r=FXS[k]; if(r){ if(r.depthTexture) r.depthTexture.dispose(); r.dispose(); } } for(const k in FXS.m) FXS.m[k].dispose(); FXS=null; }
+function fxEnsure(){
+  const v=renderer.getDrawingBufferSize(new THREE.Vector2()), W=v.x, H=v.y;
+  if(FXS&&FXS.W===W&&FXS.H===H) return FXS;
+  fxDispose();
+  const hw=W>>1, hh=H>>1, qw=W>>2, qh=H>>2, tex=r=>({value:r.texture});
+  const S0={W,H,sc:fxRT(W,H,true),ao:fxRT(hw,hh),ao2:fxRT(hw,hh),b1:fxRT(qw,qh),b2:fxRT(qw,qh),rays:fxRT(hw,hh),comp:fxRT(W,H)};
+  const D={value:S0.sc.depthTexture}, nr=FXU.near, fr=FXU.far;
+  S0.u={thr:{value:0.86},sun:{value:new THREE.Vector2(.5,.5)},vis:{value:0},t:{value:0},sunCol:{value:new THREE.Color(1,.9,.7)},dir:{value:new THREE.Vector2()},aoT:{value:new THREE.Vector2(1/hw,1/hh)},bPx:{value:new THREE.Vector2(1/qw,1/qh)}};
+  S0.m={
+    ao:fxMat(FX_AO_FS,{tDepth:D,uNear:nr,uFar:fr,uTan:FXU.tan,uAsp:FXU.asp,uFocal:FXU.focal,uPx:FXU.px}),
+    aob:fxMat(FX_AOB_FS,{tAO:tex(S0.ao),tDepth:D,uNear:nr,uFar:fr,uTexel:S0.u.aoT}),
+    bright:fxMat(FX_BRIGHT_FS,{tScene:tex(S0.sc),tDepth:D,uThr:S0.u.thr,uPx:S0.u.bPx}),
+    blur:fxMat(FX_BLUR_FS,{tIn:{value:null},uDir:S0.u.dir}),
+    rays:fxMat(FX_RAYS_FS,{tDepth:D,uNear:nr,uFar:fr,uSun:S0.u.sun,uVis:S0.u.vis,uAsp:FXU.asp}),
+    comp:fxMat(FX_COMP_FS,{tScene:tex(S0.sc),tAO:tex(S0.ao2),tBloom:tex(S0.b1),tRays:tex(S0.rays),uAO:{value:0},uBloom:{value:0},uRays:{value:0},uTone:{value:0},uVig:{value:0},uGrain:{value:0},uChroma:{value:0},uTime:S0.u.t,uAsp:FXU.asp,uSunCol:S0.u.sunCol}),
+    fxaa:fxMat(FX_FXAA_FS,{tIn:tex(S0.comp),uPx:FXU.px})
+  };
+  S0.quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),S0.m.comp); S0.quad.frustumCulled=false;
+  S0.scene=new THREE.Scene(); S0.scene.add(S0.quad); S0.cam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  FXS=S0; return S0;
+}
+const _fxV=new THREE.Vector3(), _fxD=new THREE.Vector3();
+function fxRender(){
+  if(!fxAny()){ if(FXS) fxDispose(); renderer.render(scene,camera); return; }
+  const F=fxEnsure(), W=F.W, H=F.H;
+  FXU.near.value=camera.near; FXU.far.value=camera.far; FXU.tan.value=Math.tan(camera.fov*Math.PI/360); FXU.asp.value=camera.aspect; FXU.focal.value=0.5*H/FXU.tan.value; FXU.px.value.set(1/W,1/H);
+  const pass=(mat,target)=>{ F.quad.material=mat; renderer.setRenderTarget(target); renderer.render(F.scene,F.cam); };
+  renderer.setRenderTarget(F.sc); renderer.render(scene,camera);
+  if(FX.ao){ pass(F.m.ao,F.ao); pass(F.m.aob,F.ao2); }
+  if(FX.bloom){
+    pass(F.m.bright,F.b1);
+    for(let k=0;k<2;k++){ const s=1+k*1.6;
+      F.m.blur.uniforms.tIn.value=F.b1.texture; F.u.dir.value.set(s/F.b1.width,0); pass(F.m.blur,F.b2);
+      F.m.blur.uniforms.tIn.value=F.b2.texture; F.u.dir.value.set(0,s/F.b1.height); pass(F.m.blur,F.b1); }
+  }
+  let vis=0;
+  if(FX.rays){
+    _fxV.copy(camera.position).addScaledVector(sunDir,1000).project(camera); camera.getWorldDirection(_fxD);
+    vis=sstep(0,0.35,_fxD.dot(sunDir))*sstep(-0.03,0.12,sunDir.y);
+    if(vis>0.01){ F.u.sun.value.set(_fxV.x*.5+.5,_fxV.y*.5+.5); F.u.vis.value=vis; F.u.sunCol.value.copy(sun.color); pass(F.m.rays,F.rays); }
+  }
+  const cu=F.m.comp.uniforms; cu.uAO.value=FX.ao?1:0; cu.uBloom.value=FX.bloom?1:0; cu.uRays.value=(FX.rays&&vis>0.01)?1:0; cu.uTone.value=FX.tone?1:0; cu.uVig.value=FX.vig?1:0; cu.uGrain.value=FX.grain?1:0; cu.uChroma.value=FX.chroma?1:0; F.u.t.value=(performance.now()%10000)/1000;
+  pass(F.m.comp,FX.fxaa?F.comp:null);
+  if(FX.fxaa) pass(F.m.fxaa,null);
+  renderer.setRenderTarget(null);
+}
+let skyR=2000;
+function updFog(){
+  const far=S*range*1.2+100; scene.fog.far=FX.haze?far*0.6:far; scene.fog.near=FX.haze?15:120;
+  camera.far=Math.max(2800,far+300); camera.updateProjectionMatrix(); skyR=camera.far*0.7;
+  sunDisc.scale.setScalar(skyR/2000); stars.scale.setScalar(skyR*1.15/2300);
+}
+function applyShadowQ(){
+  const ms=FX.shq?4096:(isTouch?1024:2048), e=FX.shq?140:90; sun.shadow.mapSize.set(ms,ms);
+  if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }
+  const sc=sun.shadow.camera; sc.left=-e; sc.right=e; sc.top=e; sc.bottom=-e; sc.updateProjectionMatrix();
+}
+
 /* =====================  АВТОБУС  ===================== */
 const BW=2.5,BH=3,BL=12,HX=BW/2,HL=BL/2;
 function busGeometry(){
@@ -684,6 +866,10 @@ function ensureTiles(){
     if(!t){ t={key:k,i,j,state:'queued',tries:0,retryAt:0,d:0,group:null,rc:new Set(),bc:new Set(),nc:new Set(),stops:[],owned:[]}; tiles.set(k,t); }
     t.d=Math.hypot((i+.5)*S-bus.x,(j+.5)*S-bus.z);
   }
+  { const now=performance.now(); for(const t of tiles.values()) if(t.terrMesh){
+    if(satEnabled&&!t.satMat&&!t.satBusy&&t.d<=S*SATR&&now-(t.satT||0)>15000){ t.satBusy=1; t.satT=now; loadSat(t,t.terrMesh).finally(()=>{ t.satBusy=0; }); }
+    else if(t.satMat&&t.d>S*(SATR+1.5)){ t.satMat.map.dispose(); t.satMat.dispose(); t.satMat=null; applySat(t); }
+  } }
   for(const t of [...tiles.values()]) if(Math.max(Math.abs(t.i-bi),Math.abs(t.j-bj))>range+1) removeTile(t);
 }
 function overpassQuery(t){
@@ -983,7 +1169,7 @@ const demData=new Map(), demProm=new Map(), nodeMemo=new Map();
 let demBase=null, demInit=null, demFailed=false, terrEnabled=true, EXAG=1, terrMinH=0;
 const terrTex=makeNoise(256,190,70);
 const matTerrain=new THREE.MeshLambertMaterial({vertexColors:true});
-const SAT_Z=16; let satEnabled=true, satNote=''; const satCache=new Map();
+const SATR=3.6, SAT_Z=16; let satEnabled=true, satNote=''; const satCache=new Map();
 function mercN(x,z,n){ const ll=unproj(x,z), r=ll[0]*Math.PI/180; return [(ll[1]+180)/360*n,(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n]; }
 function satTile(tpl,z,x,y){
   const url=tpl.replace('{z}',z).replace('{x}',x).replace('{y}',y); let p=satCache.get(url); if(p) return p;
@@ -1358,7 +1544,7 @@ function buildTile(T,data){
   // --- сборка ---
   const g=new THREE.Group();
   for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
-  T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; if(satEnabled&&terrMesh) loadSat(T,terrMesh);
+  T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; if(satEnabled&&terrMesh&&T.d<=S*SATR){ T.satT=performance.now(); loadSat(T,terrMesh); }
 }
 
 /* =====================  ТЕЛЕПОРТ / КООРДИНАТЫ  ===================== */
@@ -1412,8 +1598,9 @@ $('coord').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault
   sel.addEventListener('change',()=>{ const p=PRESETS[+sel.value]; if(p&&p[1]){ $('coord').value=p[1][0]+', '+p[1][1]; teleport(p[1][0],p[1][1]); } sel.value=0; sel.blur(); }); }
 $('src').addEventListener('change',()=>{ srcNote=''; const ll=unproj(bus.x,bus.z); teleport(ll[0],ll[1]); $('src').blur(); });
 $('sgurl').addEventListener('change',()=>{ srcNote=''; if($('src').value==='streets'){ const ll=unproj(bus.x,bus.z); teleport(ll[0],ll[1]); } $('sgurl').blur(); });
-$('range').addEventListener('change',e=>{ range=+e.target.value; scene.fog.far=S*range*1.2+100; });
-scene.fog.far=S*range*1.2+100;
+$('range').addEventListener('change',e=>{ range=+e.target.value; updFog(); e.target.blur(); });
+updFog();
+for(const cb of document.querySelectorAll('[data-fx]')) cb.addEventListener('change',()=>{ FX[cb.dataset.fx]=cb.checked; if(cb.dataset.fx==='haze') updFog(); if(cb.dataset.fx==='shq') applyShadowQ(); cb.blur(); });
 function rebuildAll(){ updTerrSettings(); nodeMemo.clear(); terrMinH=0; for(const t of tiles.values()){ clearTileContent(t); t.state='queued'; t.tries=0; } }
 $('terr').addEventListener('change',()=>{ rebuildAll(); $('terr').blur(); });
 $('exag').addEventListener('change',()=>{ rebuildAll(); $('exag').blur(); });
@@ -1541,7 +1728,7 @@ function animate(){
   applyTime();
   { const tx=Math.round(bus.x*4)/4, tz=Math.round(bus.z*4)/4, ty=bus.y; sun.target.position.set(tx,ty,tz); sun.position.set(tx+sunDir.x*260,ty+sunDir.y*260,tz+sunDir.z*260); }
   updateCamera(dt);
-  stars.position.copy(camera.position); sunDisc.position.set(camera.position.x+sunDir.x*2000,camera.position.y+sunDir.y*2000,camera.position.z+sunDir.z*2000);
+  stars.position.copy(camera.position); sunDisc.position.set(camera.position.x+sunDir.x*skyR,camera.position.y+sunDir.y*skyR,camera.position.z+sunDir.z*skyR);
   tTod+=dt; if(tTod>0.25){ tTod=0; const hh=Math.floor(tod), mm=Math.floor((tod-hh)*60); $('todl').textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); { const lat=unproj(bus.x,bus.z)[0], noon=90-Math.abs(lat-sunDecl()); $('sunalt').textContent='☀ сейчас '+sunElDeg.toFixed(0)+'°, в полдень '+noon.toFixed(0)+'°'; } if(!todDrag) $('tod').value=tod; }
   // светофоры
   const cyc=t0%20, sA=lampState(cyc), sB=lampState((cyc+10)%20);
@@ -1576,7 +1763,7 @@ function animate(){
     if(!rev.pending&&performance.now()-rev.t>7000&&(!rev.set||Math.hypot((ll[1]-rev.lon)*kx,(ll[0]-rev.lat)*kz)>150)) reverseGeo(ll[0],ll[1]);
   }
   tHash+=dt; if(tHash>4){ tHash=0; const ll=unproj(bus.x,bus.z); try{ history.replaceState(null,'','#'+ll[0].toFixed(5)+','+ll[1].toFixed(5)); }catch(e){} }
-  renderer.render(scene,camera);
+  fxRender();
 }
 
 /* =====================  СТАРТ  ===================== */
