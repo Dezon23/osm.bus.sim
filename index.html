@@ -63,12 +63,16 @@ input[type=range]{flex:1;min-width:80px}
 
     <h2>Модель автобуса</h2>
     <div class="row">
-      <button id="dl">⬇ Скачать развёртку</button>
-      <label class="btn" style="display:inline-flex">⬆ Своя текстура<input type="file" id="file" accept="image/*" hidden></label>
+      <label class="btn" style="display:inline-flex">⬆ Модель (zip с OBJ)<input type="file" id="modelfile" accept=".zip,.obj,application/zip" hidden></label>
+      <button id="dlmodel">⬇ Шаблон автобуса (zip)</button>
+    </div>
+    <div class="row">
+      <button id="dl">⬇ Развёртка коробки</button>
+      <label class="btn" style="display:inline-flex">⬆ Текстура коробки<input type="file" id="file" accept="image/*" hidden></label>
       <button id="reset">Сброс</button>
     </div>
     <div class="row"><span class="small">Прозрачность</span><input type="range" id="opacity" min="0.1" max="1" step="0.05" value="1"></div>
-    <div class="small">Модель — просто коробка (6 граней). PNG с альфа-каналом поддерживается: прозрачные пиксели прозрачны в игре. Автобус 12 × 2.5 × 3 м без колёс. Пропорции развёртки 29:8 (например 2900×800 или 5800×1600).</div>
+    <div class="small">Своя модель: zip-архив с .obj, .mtl и текстурами. Прозрачность текстуры есть только у мешей, в названии которых есть «_transparent_»; у остальных она игнорируется. Масштаб 1 ед. = 1 м, перед автобуса — +Z, начало координат — центр днища; шаблон со всеми размерами и инструкцией — кнопка «Шаблон автобуса». Без своей модели автобус — коробка 12 × 2.5 × 3 м. Ползунок «Прозрачность» действует на прозрачные меши. Модель и настройки запоминаются.</div>
 
     <h2>Настройки</h2>
     <div class="row">
@@ -108,19 +112,22 @@ input[type=range]{flex:1;min-width:80px}
       <label>Ход времени <select id="tspd" style="flex:none"><option value="0">Стоп</option><option value="1">×1 (реальный)</option><option value="60" selected>×60</option><option value="300">×300</option><option value="1200">×1200</option></select></label>
       <label><input type="checkbox" id="shad"> Тени</label>
     </div>
+    <h2>Камера</h2>
+    <div class="row">
+      <label><input type="checkbox" id="freecam"> Свободная камера (WASD — движение, Q/E — вниз/вверх, Shift — ускорение, мышь — поворот, колесо — скорость; автобус стоит)</label>
+    </div>
+    <div class="row"><span class="small">Скорость</span><input type="range" id="fcspeed" min="2" max="300" step="1" value="40"><span id="fcspeedl" class="small" style="min-width:56px;text-align:right">40 м/с</span></div>
+    <div class="row"><span class="small">FOV</span><input type="range" id="camfov" min="30" max="110" step="1" value="60"><span id="fovl" class="small" style="min-width:56px;text-align:right">60°</span></div>
     <h2>Эффекты освещения</h2>
     <div class="small">Все эффекты по умолчанию выключены — они нагружают видеокарту. При включении эффектов краёв-сглаживание браузера отключается: включайте FXAA.</div>
     <div class="row" style="flex-wrap:wrap;gap:6px 14px">
       <label><input type="checkbox" data-fx="ao"> Ambient Occlusion (затенение углов)</label>
       <label><input type="checkbox" data-fx="bloom"> Свечение (Bloom)</label>
       <label><input type="checkbox" data-fx="rays"> Лучи солнца</label>
-      <label><input type="checkbox" data-fx="tone"> Кинотон (контраст, насыщенность)</label>
       <label><input type="checkbox" data-fx="vig"> Виньетка</label>
       <label><input type="checkbox" data-fx="fxaa"> Сглаживание FXAA</label>
       <label><input type="checkbox" data-fx="haze"> Атмосферная дымка</label>
       <label><input type="checkbox" data-fx="shq"> Тени высокого качества</label>
-      <label><input type="checkbox" data-fx="chroma"> Хроматическая аберрация</label>
-      <label><input type="checkbox" data-fx="grain"> Плёночное зерно</label>
     </div>
     <div class="row">
       <button id="night">🌙 День/ночь</button>
@@ -314,17 +321,19 @@ function bridgeProfile(pts,cutEnds,Hfix,jh){
   const P=densify(pts,6); let L=0; const sm=[0];
   for(let i=1;i<P.length;i++){ L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]); sm.push(L); }
   const j0=jh&&jh[0]!=null?jh[0]:null, j1=jh&&jh[1]!=null?jh[1]:null, c0=!!(cutEnds&&cutEnds[0])||j0!==null, c1=!!(cutEnds&&cutEnds[1])||j1!==null;
-  const H=(c0||c1)?Hfix:Math.min(Hfix,0.075*L+0.4), rl=H/0.14;
+  const H=(c0||c1)?Hfix:Math.min(Hfix,0.05*L+0.5), nfree=(c0?0:1)+(c1?0:1), rl=Math.max(2,Math.min(H/0.08,L/Math.max(1,nfree)));
   const t0=th(P[0][0],P[0][1]), t1=th(P[P.length-1][0],P[P.length-1][1]);
   for(let i=0;i<P.length;i++){ const d=Math.min(c0?1e9:sm[i],c1?1e9:L-sm[i]), r=Math.min(1,d/rl); let o=0; if(j0!==null&&j0>H){ const q=Math.min(1,sm[i]/40); o+=(j0-H)*(1-q*q*(3-2*q)); } if(j1!==null&&j1>H){ const q=Math.min(1,(L-sm[i])/40); o+=(j1-H)*(1-q*q*(3-2*q)); }
     P[i]=[P[i][0],P[i][1],t0+(t1-t0)*sm[i]/(L||1)+H*r*r*(3-2*r)+o]; }
   return P;
 }
-const BRH={motorway:8,motorway_link:7,trunk:8,trunk_link:7,primary:6.5,primary_link:6,secondary:6.5,secondary_link:6,tertiary:6,tertiary_link:6,residential:5.5,service:5,pedestrian:4.5,footway:4.5,cycleway:4.5,track:4.5,unclassified:5.5,living_street:5.5,path:4.5};
+const BRH={motorway:7,motorway_link:6.2,trunk:7,trunk_link:6.2,primary:6,primary_link:5.6,secondary:6,secondary_link:5.6,tertiary:5.6,tertiary_link:5.4,residential:5.2,unclassified:5.2,living_street:5,service:5,pedestrian:4.6,footway:4.6,cycleway:4.6,track:4.6,path:4.6};
 function vq(mb,a,b,c,d,col){ mb.quad(a,b,c,d,col); mb.quad(d,c,b,a,col); }
 function bridgeBody(mb,e,col,rail){
   const L=e.L,R=e.R,T=0.9, dn=p=>[p[0],p[1]-T,p[2]], up=p=>[p[0],p[1]+0.9,p[2]];
+  const cl=q=>q[1]-th(q[0],q[2]);
   for(let i=0;i<L.length-1;i++){
+    if(Math.min(cl(L[i]),cl(L[i+1]),cl(R[i]),cl(R[i+1]))<1.25) continue;   // низкие участки съездов — без боковых стенок и днища
     for(const E of [L,R]){ vq(mb,E[i],E[i+1],dn(E[i+1]),dn(E[i]),col); vq(mb,E[i],E[i+1],up(E[i+1]),up(E[i]),rail); }
     mb.quad(dn(L[i]),dn(R[i]),dn(R[i+1]),dn(L[i+1]),col,{nrm:[0,-1,0]});
   }
@@ -475,6 +484,20 @@ function makeFacadeGlow(){
   return texFrom(c,4);
 }
 const matBld=new THREE.MeshLambertMaterial({vertexColors:true,map:facadeTex,emissive:0xffffff,emissiveMap:makeFacadeGlow(),emissiveIntensity:0});
+matBld.onBeforeCompile=sh=>{
+  sh.fragmentShader=sh.fragmentShader.replace('#include <emissivemap_fragment>',`
+#ifdef USE_EMISSIVEMAP
+  vec4 emissiveColor = texture2D( emissiveMap, vUv );
+  float wm = smoothstep( 0.12, 0.35, max( emissiveColor.r, max( emissiveColor.g, emissiveColor.b ) ) );
+  vec2 wcell = floor( vec2( vUv.x * 2.0, vUv.y ) );
+  float wh1 = fract( sin( dot( wcell, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
+  float wh2 = fract( sin( dot( wcell, vec2( 39.346, 11.135 ) ) ) * 24634.6345 );
+  vec3 wcol = wh1 < 0.42 ? vec3( 0.0 ) : ( wh1 < 0.80 ? mix( vec3( 1.0, 0.76, 0.40 ), vec3( 1.0, 0.90, 0.68 ), wh2 ) : ( wh1 < 0.91 ? vec3( 0.50, 0.66, 1.0 ) : vec3( 0.95, 0.97, 1.0 ) ) );
+  wcol *= 0.55 + 0.65 * wh2;
+  totalEmissiveRadiance *= wm * wcol;
+#endif
+`);
+};
 const matLampA=new THREE.MeshBasicMaterial({map:lampTexA,side:THREE.DoubleSide});
 const matLampB=new THREE.MeshBasicMaterial({map:lampTexB,side:THREE.DoubleSide});
 const matLampHead=new THREE.MeshLambertMaterial({vertexColors:true,emissive:0xffd9a0,emissiveIntensity:0});
@@ -567,6 +590,7 @@ const C_HEMI_DAY=new THREE.Color(0xffffff), C_HEMI_NIGHT=new THREE.Color(0x2a355
 let tod=(()=>{ const d=new Date(); return d.getHours()+d.getMinutes()/60; })(), todSpeed=60, shadowsOn=!isTouch, isDark=false;
 const sunDir=new THREE.Vector3(0,1,0); let DOY=Math.floor((Date.now()-new Date(new Date().getFullYear(),0,0))/864e5), sunElDeg=0;
 const MONTH_D=[0,31,59,90,120,151,181,212,243,273,304,334];
+const busMats=[]; let busEmI=0.1, busOp=1;
 function sunDecl(){ return 23.44*Math.sin(2*Math.PI*(284+DOY)/365); }
 function sunPos(hour,latDeg){
   const decl=sunDecl()*Math.PI/180, H=(hour-12)*15*Math.PI/180, phi=latDeg*Math.PI/180;
@@ -586,12 +610,13 @@ function applyTime(){
   const ll=unproj(bus.x,bus.z), sp=sunPos(tod,ll[0]), sinE=Math.sin(sp.E), cosE=Math.cos(sp.E);
   sunDir.set(cosE*Math.sin(sp.A),sinE,-cosE*Math.cos(sp.A));
   const k=sstep(-0.05,0.25,sinE), kd=sstep(-0.14,0.2,sinE);
+  busEmI=0.08+0.17*(1-kd); for(const m of busMats) m.emissiveIntensity=busEmI;
   sun.intensity=0.95*k; sun.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.45,sinE));
   hemi.intensity=0.25+0.68*kd; hemi.color.copy(C_HEMI_NIGHT).lerp(C_HEMI_DAY,kd); hemi.groundColor.copy(C_GRD_NIGHT).lerp(C_GRD_DAY,kd);
   const tw=Math.exp(-Math.pow(sp.E*57.2958/8,2))*0.6;
   skyC.copy(C_SKY_NIGHT).lerp(C_SKY_DAY,kd).lerp(C_SKY_TW,tw); scene.background.copy(skyC); scene.fog.color.copy(skyC);
   const dark=sinE<0.07; if(dark!==isDark){ isDark=dark; headL.visible=headR.visible=dark; }
-  const nf=1-sstep(-0.10,0.06,sinE); matBld.emissiveIntensity=nf*0.9; matLampHead.emissiveIntensity=nf*1.7; matGlow.opacity=nf*0.8; matGlow.visible=nf>0.01; starMat.opacity=1-sstep(-0.16,-0.02,sinE); sunElDeg=sp.E*57.2958;
+  const nf=1-sstep(-0.10,0.06,sinE); matBld.emissiveIntensity=nf*1.15; matLampHead.emissiveIntensity=nf*1.7; matGlow.opacity=nf*0.8; matGlow.visible=nf>0.01; starMat.opacity=1-sstep(-0.16,-0.02,sinE); sunElDeg=sp.E*57.2958;
   sunDisc.visible=sinE>-0.04; sunDisc.material.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.4,sinE));
   sun.castShadow=shadowsOn&&sinE>0.04;
 }
@@ -599,8 +624,8 @@ function toggleNight(){ tod=(tod>=6&&tod<18)?0:12; $('tod').value=tod; }
 addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 
 /* =====================  ЭФФЕКТЫ ОСВЕЩЕНИЯ (постобработка; всё выключено по умолчанию)  ===================== */
-const FX={ao:false,bloom:false,rays:false,tone:false,vig:false,fxaa:false,grain:false,chroma:false,haze:false,shq:false};
-const fxAny=()=>FX.ao||FX.bloom||FX.rays||FX.tone||FX.vig||FX.fxaa||FX.grain||FX.chroma;
+const FX={ao:false,bloom:false,rays:false,vig:false,fxaa:false,haze:false,shq:false};
+const fxAny=()=>FX.ao||FX.bloom||FX.rays||FX.vig||FX.fxaa;
 const FXU={near:{value:1.5},far:{value:2800},tan:{value:1},asp:{value:1},focal:{value:500},px:{value:new THREE.Vector2(1/1920,1/1080)}};
 const FX_VS='varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }';
 const FX_LIN='uniform float uNear; uniform float uFar; float linZ(float d){ float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }';
@@ -671,22 +696,13 @@ void main(){
   gl_FragColor=vec4(r,r,r,1.);
 }`;
 const FX_COMP_FS=`uniform sampler2D tScene; uniform sampler2D tAO; uniform sampler2D tBloom; uniform sampler2D tRays;
-uniform float uAO; uniform float uBloom; uniform float uRays; uniform float uTone; uniform float uVig; uniform float uGrain; uniform float uChroma;
-uniform float uTime; uniform float uAsp; uniform vec3 uSunCol; varying vec2 vUv;
-vec3 aces(vec3 x){ return (x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14); }
+uniform float uAO; uniform float uBloom; uniform float uRays; uniform float uVig; uniform float uAsp; uniform vec3 uSunCol; varying vec2 vUv;
 void main(){
-  vec3 c;
-  if(uChroma>0.5){ vec2 d=(vUv-.5)*0.007; c=vec3(texture2D(tScene,vUv+d).r,texture2D(tScene,vUv).g,texture2D(tScene,vUv-d).b); }
-  else c=texture2D(tScene,vUv).rgb;
+  vec3 c=texture2D(tScene,vUv).rgb;
   if(uAO>0.5) c*=texture2D(tAO,vUv).r;
   if(uBloom>0.5) c+=texture2D(tBloom,vUv).rgb*0.85;
   if(uRays>0.5) c+=uSunCol*texture2D(tRays,vUv).r*0.9;
-  if(uTone>0.5){
-    c=clamp(aces(c*1.3)/0.854,0.,1.);
-    float l=dot(c,vec3(0.299,0.587,0.114)); c=mix(vec3(l),c,1.16);
-  }
   if(uVig>0.5){ float v=length((vUv-.5)*vec2(uAsp,1.)*vec2(0.62,0.9)); c*=1.-smoothstep(0.32,0.95,v)*0.6; }
-  if(uGrain>0.5){ float g=fract(sin(dot(vUv*vec2(1731.,911.)+uTime,vec2(12.9898,78.233)))*43758.5453)-0.5; c+=g*0.07; }
   gl_FragColor=vec4(c,1.);
 }`;
 const FX_FXAA_FS=`uniform sampler2D tIn; uniform vec2 uPx; varying vec2 vUv;
@@ -722,7 +738,7 @@ function fxEnsure(){
     bright:fxMat(FX_BRIGHT_FS,{tScene:tex(S0.sc),tDepth:D,uThr:S0.u.thr,uPx:S0.u.bPx}),
     blur:fxMat(FX_BLUR_FS,{tIn:{value:null},uDir:S0.u.dir}),
     rays:fxMat(FX_RAYS_FS,{tDepth:D,uNear:nr,uFar:fr,uSun:S0.u.sun,uVis:S0.u.vis,uAsp:FXU.asp}),
-    comp:fxMat(FX_COMP_FS,{tScene:tex(S0.sc),tAO:tex(S0.ao2),tBloom:tex(S0.b1),tRays:tex(S0.rays),uAO:{value:0},uBloom:{value:0},uRays:{value:0},uTone:{value:0},uVig:{value:0},uGrain:{value:0},uChroma:{value:0},uTime:S0.u.t,uAsp:FXU.asp,uSunCol:S0.u.sunCol}),
+    comp:fxMat(FX_COMP_FS,{tScene:tex(S0.sc),tAO:tex(S0.ao2),tBloom:tex(S0.b1),tRays:tex(S0.rays),uAO:{value:0},uBloom:{value:0},uRays:{value:0},uVig:{value:0},uAsp:FXU.asp,uSunCol:S0.u.sunCol}),
     fxaa:fxMat(FX_FXAA_FS,{tIn:tex(S0.comp),uPx:FXU.px})
   };
   S0.quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),S0.m.comp); S0.quad.frustumCulled=false;
@@ -749,7 +765,7 @@ function fxRender(){
     vis=sstep(0,0.35,_fxD.dot(sunDir))*sstep(-0.03,0.12,sunDir.y);
     if(vis>0.01){ F.u.sun.value.set(_fxV.x*.5+.5,_fxV.y*.5+.5); F.u.vis.value=vis; F.u.sunCol.value.copy(sun.color); pass(F.m.rays,F.rays); }
   }
-  const cu=F.m.comp.uniforms; cu.uAO.value=FX.ao?1:0; cu.uBloom.value=FX.bloom?1:0; cu.uRays.value=(FX.rays&&vis>0.01)?1:0; cu.uTone.value=FX.tone?1:0; cu.uVig.value=FX.vig?1:0; cu.uGrain.value=FX.grain?1:0; cu.uChroma.value=FX.chroma?1:0; F.u.t.value=(performance.now()%10000)/1000;
+  const cu=F.m.comp.uniforms; cu.uAO.value=FX.ao?1:0; cu.uBloom.value=FX.bloom?1:0; cu.uRays.value=(FX.rays&&vis>0.01)?1:0; cu.uVig.value=FX.vig?1:0;
   pass(F.m.comp,FX.fxaa?F.comp:null);
   if(FX.fxaa) pass(F.m.fxaa,null);
   renderer.setRenderTarget(null);
@@ -791,15 +807,16 @@ function busGeometry(){
 }
 const busGroup=new THREE.Group(); busGroup.rotation.order='YXZ'; scene.add(busGroup);
 const busGeo=busGeometry();
-const matBack=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.BackSide,depthWrite:false,emissive:0x2a2a2a});
-const matFront=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.FrontSide,depthWrite:false,emissive:0x2a2a2a});
+const matBack=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.BackSide,depthWrite:false,emissive:0xffffff,emissiveMap:busTex,emissiveIntensity:0.1});
+const matFront=new THREE.MeshLambertMaterial({map:busTex,transparent:true,side:THREE.FrontSide,depthWrite:false,emissive:0xffffff,emissiveMap:busTex,emissiveIntensity:0.1});
+busMats.push(matBack,matFront);
 const mBack=new THREE.Mesh(busGeo,matBack), mFront=new THREE.Mesh(busGeo,matFront);
 mBack.renderOrder=10; mFront.renderOrder=11;
 busGroup.add(mBack,mFront); mBack.castShadow=mFront.castShadow=true;
 const headL=new THREE.SpotLight(0xfff0cc,1.6,110,0.5,0.5), headR=headL.clone();
 for(const [h,sx] of [[headL,0.8],[headR,-0.8]]){ h.position.set(sx,1.1,HL); h.target.position.set(sx,0,HL+30); busGroup.add(h,h.target); h.visible=false; }
-function setBusTexture(tex){ busTex=tex; matBack.map=matFront.map=tex; matBack.needsUpdate=matFront.needsUpdate=true; }
-$('opacity').addEventListener('input',e=>{ matBack.opacity=matFront.opacity=+e.target.value; });
+function setBusTexture(tex){ busTex=tex; matBack.map=matFront.map=matBack.emissiveMap=matFront.emissiveMap=tex; matBack.needsUpdate=matFront.needsUpdate=true; }
+$('opacity').addEventListener('input',e=>{ busOp=+e.target.value; matBack.opacity=matFront.opacity=busOp; for(const m of busMats) if(m.userData.tr) m.opacity=busOp; });
 $('dl').addEventListener('click',()=>{
   const c=document.createElement('canvas'); c.width=NW;c.height=NH; drawTemplate(c.getContext('2d'));
   c.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='bus_template_2900x800.png'; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500); },'image/png');
@@ -807,11 +824,198 @@ $('dl').addEventListener('click',()=>{
 $('file').addEventListener('change',e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   const url=URL.createObjectURL(f), img=new Image();
-  img.onload=()=>{ const t=new THREE.Texture(img); t.anisotropy=8; t.needsUpdate=true; setBusTexture(t); URL.revokeObjectURL(url); setStatus('Текстура автобуса загружена ✓'); };
+  img.onload=()=>{ const t=new THREE.Texture(img); t.anisotropy=8; t.needsUpdate=true; setBusTexture(t); disposeBusModel(); showBusBox(true); idb.set('bus',{kind:'tex',blob:f}); URL.revokeObjectURL(url); setStatus('Текстура автобуса загружена ✓'); };
   img.onerror=()=>setStatus('Не удалось прочитать изображение');
   img.src=url; e.target.value='';
 });
-$('reset').addEventListener('click',()=>{ const t=new THREE.CanvasTexture(livCanvas); t.anisotropy=8; setBusTexture(t); });
+$('reset').addEventListener('click',()=>{ const t=new THREE.CanvasTexture(livCanvas); t.anisotropy=8; setBusTexture(t); disposeBusModel(); showBusBox(true); idb.del('bus'); });
+/* =====================  ZIP (без библиотек), OBJ-МОДЕЛИ, ШАБЛОН  ===================== */
+const crcT=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u){ let c=0xFFFFFFFF; for(let i=0;i<u.length;i++) c=crcT[(c^u[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){
+  const parts=[], cd=[], enc=new TextEncoder(); let off=0, cds=0;
+  for(const f of files){
+    const nm=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(12,0x21,true); h.setUint32(14,crc,true); h.setUint32(18,sz,true); h.setUint32(22,sz,true); h.setUint16(26,nm.length,true);
+    parts.push(h.buffer,nm,f.data);
+    const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(14,0x21,true); c.setUint32(16,crc,true); c.setUint32(20,sz,true); c.setUint32(24,sz,true); c.setUint16(28,nm.length,true); c.setUint32(42,off,true);
+    cd.push(c.buffer,nm); cds+=46+nm.length; off+=30+nm.length+sz;
+  }
+  const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true); e.setUint32(12,cds,true); e.setUint32(16,off,true);
+  return new Blob([...parts,...cd,e.buffer],{type:'application/zip'});
+}
+async function inflateRaw(u8){
+  if(typeof DecompressionStream==='undefined') throw new Error('браузер не умеет распаковывать zip (нужен свежий Chrome/Edge/Firefox/Safari)');
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+}
+function zipRead(buf){
+  const u=new Uint8Array(buf), dv=new DataView(buf), dec=new TextDecoder(); let e=-1;
+  for(let i=u.length-22;i>=Math.max(0,u.length-70000);i--) if(dv.getUint32(i,true)===0x06054b50){ e=i; break; }
+  if(e<0) throw new Error('это не zip-архив');
+  const n=dv.getUint16(e+10,true); let p=dv.getUint32(e+16,true); const out=[];
+  for(let k=0;k<n;k++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const flags=dv.getUint16(p+8,true), meth=dv.getUint16(p+10,true), cs=dv.getUint32(p+20,true), nl=dv.getUint16(p+28,true), xl=dv.getUint16(p+30,true), cl=dv.getUint16(p+32,true), lo=dv.getUint32(p+42,true);
+    const name=dec.decode(u.subarray(p+46,p+46+nl)); p+=46+nl+xl+cl;
+    if(name.endsWith('/')||/(^|\/)(__MACOSX|\.)/.test(name)) continue;
+    out.push({name,get:async()=>{ const ln=dv.getUint16(lo+26,true), lx=dv.getUint16(lo+28,true), s=lo+30+ln+lx, raw=u.subarray(s,s+cs); return meth===0?raw.slice():meth===8?await inflateRaw(raw):(()=>{ throw new Error('неподдерживаемый метод сжатия в zip: '+meth); })(); }});
+  }
+  return out;
+}
+const baseName=s=>String(s).replace(/\\/g,'/').split('/').pop().toLowerCase();
+function parseOBJ(text){
+  const V=[],T=[],N=[], subs=new Map(), mtllibs=[]; let on='default', um='', cur=null;
+  const sub=()=>{ if(cur) return cur; const k=on+'\u0000'+um; cur=subs.get(k); if(!cur){ cur={name:on,mat:um,pos:[],uv:[],nor:[],needN:false}; subs.set(k,cur); } return cur; };
+  const idx=(s,len)=>{ let i=parseInt(s,10); if(!(i||i===0)||isNaN(i)) return -1; return i>0?i-1:len+i; };
+  for(const raw of text.split('\n')){
+    const l=raw.trim(); if(!l||l[0]==='#') continue; const t=l.split(/\s+/), c=t[0];
+    if(c==='v') V.push(+t[1],+t[2],+t[3]); else if(c==='vt') T.push(+t[1],+t[2]); else if(c==='vn') N.push(+t[1],+t[2],+t[3]);
+    else if(c==='o'||c==='g'){ on=t.slice(1).join(' ')||'default'; cur=null; }
+    else if(c==='usemtl'){ um=t.slice(1).join(' '); cur=null; }
+    else if(c==='mtllib') mtllibs.push(t.slice(1).join(' '));
+    else if(c==='f'&&t.length>=4){
+      const vs=[]; for(let k=1;k<t.length;k++){ const a=t[k].split('/'); vs.push([idx(a[0],V.length/3),a[1]?idx(a[1],T.length/2):-1,a[2]?idx(a[2],N.length/3):-1]); }
+      const s=sub();
+      for(let k=1;k<vs.length-1;k++) for(const q of [vs[0],vs[k],vs[k+1]]){
+        if(q[0]<0||q[0]*3+2>=V.length) continue;
+        s.pos.push(V[q[0]*3],V[q[0]*3+1],V[q[0]*3+2]);
+        if(q[1]>=0&&q[1]*2+1<T.length) s.uv.push(T[q[1]*2],T[q[1]*2+1]); else s.uv.push(0,0);
+        if(q[2]>=0&&q[2]*3+2<N.length) s.nor.push(N[q[2]*3],N[q[2]*3+1],N[q[2]*3+2]); else { s.nor.push(0,1,0); s.needN=true; }
+      }
+    }
+  }
+  return {subs:[...subs.values()].filter(s=>s.pos.length>=9),mtllibs};
+}
+function parseMTL(text){
+  const m={}; let c=null;
+  for(const raw of text.split('\n')){ const l=raw.trim(); if(!l||l[0]==='#') continue; const t=l.split(/\s+/);
+    if(t[0]==='newmtl'){ c=m[t.slice(1).join(' ')]={kd:[0.8,0.8,0.8],map:''}; }
+    else if(c&&t[0]==='Kd') c.kd=[+t[1],+t[2],+t[3]];
+    else if(c&&t[0]==='map_Kd'){ const a=t.slice(1); let f=a[a.length-1]; c.map=f; } }
+  return m;
+}
+const isTransName=n=>/transparent/i.test(n);
+let busModel=null;
+function disposeBusModel(){
+  if(!busModel) return; busGroup.remove(busModel);
+  busModel.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ const i=busMats.indexOf(o.material); if(i>=0) busMats.splice(i,1); if(o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+  busModel=null;
+}
+function showBusBox(on){ if(on){ if(!mBack.parent) busGroup.add(mBack,mFront); } else if(mBack.parent) busGroup.remove(mBack,mFront); }
+function loadImgU8(u8,name){ return new Promise(res=>{ const ext=(name.split('.').pop()||'').toLowerCase(), type=ext==='jpg'||ext==='jpeg'?'image/jpeg':ext==='webp'?'image/webp':ext==='gif'?'image/gif':'image/png'; const url=URL.createObjectURL(new Blob([u8],{type})), im=new Image(); im.onload=()=>{ URL.revokeObjectURL(url); res(im); }; im.onerror=()=>{ URL.revokeObjectURL(url); res(null); }; im.src=url; }); }
+async function buildBusModel(entries){
+  const byBase=new Map(); for(const e of entries) byBase.set(baseName(e.name),e);
+  const objs=entries.filter(e=>/\.obj$/i.test(e.name)); if(!objs.length) throw new Error('в архиве нет файла .obj');
+  const objE=objs[0], dec=new TextDecoder(), obj=parseOBJ(dec.decode(await objE.get()));
+  if(!obj.subs.length) throw new Error('в .obj нет граней (f)');
+  let mtl={}; { const names=obj.mtllibs.map(baseName).filter(n=>byBase.has(n)); const mtlE=names.length?byBase.get(names[0]):entries.find(e=>/\.mtl$/i.test(e.name)); if(mtlE) mtl=parseMTL(dec.decode(await mtlE.get())); }
+  const imgs=entries.filter(e=>/\.(png|jpe?g|webp|gif)$/i.test(e.name)), texCache=new Map(), warn=[];
+  const getTex=async e=>{ const k=e.name; if(texCache.has(k)) return texCache.get(k); const im=await loadImgU8(await e.get(),e.name); let t=null; if(im){ t=new THREE.Texture(im); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=8; t.needsUpdate=true; } else warn.push('не удалось прочитать '+e.name); texCache.set(k,t); return t; };
+  const grp=new THREE.Group(); let nT=0, tris=0; const bb=new THREE.Box3();
+  for(const s of obj.subs){
+    const m=mtl[s.mat]; let texE=null;
+    if(m&&m.map) texE=byBase.get(baseName(m.map))||null;
+    if(!texE){ const nl=[s.name,s.mat].map(x=>String(x).toLowerCase()); texE=imgs.find(e=>nl.includes(baseName(e.name).replace(/\.[^.]+$/,'')))||null; }
+    if(!texE&&imgs.length===1&&!(m&&m.map)) texE=imgs[0];
+    if(!texE&&m&&m.map) warn.push('нет текстуры '+baseName(m.map));
+    const map=texE?await getTex(texE):null, tr=isTransName(s.name);
+    const col=map?new THREE.Color(1,1,1):new THREE.Color(m?m.kd[0]:0.8,m?m.kd[1]:0.8,m?m.kd[2]:0.8);
+    const mat=new THREE.MeshLambertMaterial({map,color:col,side:THREE.DoubleSide,transparent:tr,depthWrite:!tr,emissive:map?0xffffff:col.clone(),emissiveMap:map,emissiveIntensity:busEmI});
+    mat.userData.tr=tr; if(tr) mat.opacity=busOp; busMats.push(mat);
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(s.pos,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(s.uv,2));
+    if(s.needN){ g.computeVertexNormals(); } else g.setAttribute('normal',new THREE.Float32BufferAttribute(s.nor,3));
+    g.computeBoundingBox(); bb.union(g.boundingBox);
+    const mesh=new THREE.Mesh(g,mat); mesh.name=s.name; mesh.renderOrder=tr?11:10; mesh.castShadow=!tr; mesh.frustumCulled=false;
+    grp.add(mesh); if(tr) nT++; tris+=s.pos.length/9;
+  }
+  return {grp,nT,total:obj.subs.length,tris,size:bb.getSize(new THREE.Vector3()),warn};
+}
+async function applyBusZip(buf){
+  const r=await buildBusModel(zipRead(buf)); disposeBusModel(); showBusBox(false); busModel=r.grp; busGroup.add(busModel);
+  const z=r.size, odd=(Math.max(z.x,z.y,z.z)>40||Math.max(z.x,z.y,z.z)<1)?' ⚠ размер необычный — проверьте масштаб (1 единица = 1 м)':'';
+  setStatus('Модель загружена ✓ мешей: '+r.total+' (прозрачных: '+r.nT+'), треугольников: '+r.tris+', размер X×Y×Z: '+z.x.toFixed(1)+'×'+z.y.toFixed(1)+'×'+z.z.toFixed(1)+' м'+odd+(r.warn.length?' · '+r.warn.join('; '):''));
+}
+async function applyBusObjOnly(text,name){ const buf=new TextEncoder().encode(text); await applyBusZip(await zipStore([{name,data:buf}]).arrayBuffer()); }
+const idb={
+  open(){ return new Promise((res,rej)=>{ const r=indexedDB.open('osmbus',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); },
+  async get(k){ try{ const db=await this.open(); return await new Promise(res=>{ const q=db.transaction('kv').objectStore('kv').get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>res(null); }); }catch(e){ return null; } },
+  async set(k,v){ try{ const db=await this.open(); await new Promise(res=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=tx.onerror=tx.onabort=()=>res(); }); }catch(e){} },
+  async del(k){ try{ const db=await this.open(); await new Promise(res=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete=tx.onerror=tx.onabort=()=>res(); }); }catch(e){} }
+};
+function templateObj(){
+  const g=busGeometry(), P=g.attributes.position.array, Nn=g.attributes.normal.array, U=g.attributes.uv.array; const L=[];
+  L.push('# Шаблон автобуса. 1 единица = 1 метр. Y — вверх, перед автобуса — +Z, начало координат — центр днища на уровне земли.','# Размер коробки: длина (Z) 12 м, ширина (X) 2.5 м, высота (Y) 3 м.','mtllib bus_template.mtl','usemtl bus','o bus_body');
+  const v=[],t=[],n=[],f=[];
+  let vi=0; const addQuads=(arr)=>{ for(const q of arr){ const b=vi; for(const c of q){ v.push('v '+c.p.map(x=>+x.toFixed(4)).join(' ')); t.push('vt '+c.u.toFixed(5)+' '+c.v.toFixed(5)); n.push('vn '+c.n.join(' ')); vi++; } f.push('f '+[0,1,2].map(k=>(b+k+1)+'/'+(b+k+1)+'/'+(b+k+1)).join(' ')); f.push('f '+[0,2,3].map(k=>(b+k+1)+'/'+(b+k+1)+'/'+(b+k+1)).join(' ')); } };
+  const body=[]; for(let q=0;q<6;q++){ const c=[]; for(const k of [0,1,2,5]){ const i=q*6+k; c.push({p:[P[i*3],P[i*3+1],P[i*3+2]],u:U[i*2],v:U[i*2+1],n:[Nn[i*3],Nn[i*3+1],Nn[i*3+2]]}); } body.push(c); }
+  addQuads(body);
+  const bodyV=v.slice(), bodyT=t.slice(), bodyN=n.slice(), bodyF=f.slice();
+  // стеклянные панели на боках: меш с именем, содержащим «transparent», получает прозрачность текстуры
+  v.length=t.length=n.length=f.length=0; vi=24;
+  const px=(x,y)=>[x/NW,1-y/NH], gl=[], z0=-5, z1=5, y0=0.9, y1=2.5, off=0.012;
+  { const r=FACES.left, mk=(z,y,Y)=>{ const [u,w]=px(r[0]+(HL-z)*100,r[1]+(BH-y)*100); return {p:[HX+off,y,z],u,v:w,n:[1,0,0]}; }; gl.push([mk(z1,y0),mk(z0,y0),mk(z0,y1),mk(z1,y1)]); }
+  { const r=FACES.right, mk=(z,y)=>{ const [u,w]=px(r[0]+(z+HL)*100,r[1]+(BH-y)*100); return {p:[-HX-off,y,z],u,v:w,n:[-1,0,0]}; }; gl.push([mk(z0,y0),mk(z1,y0),mk(z1,y1),mk(z0,y1)]); }
+  addQuads(gl);
+  const out=L.concat(bodyV,bodyT,bodyN,bodyF,['o _transparent_'],v,t,n,f);
+  return out.join('\n')+'\n';
+}
+const TEMPLATE_README=`ШАБЛОН АВТОБУСА ДЛЯ OSM BUS 3D
+==============================
+
+Содержимое архива
+  bus_template.obj  — пример модели: коробка 12 × 2.5 × 3 м и две стеклянные панели на боках
+  bus_template.mtl  — материал (указывает на текстуру)
+  bus_template.png  — текстура-развёртка 2900×800 (100 px = 1 м), по ней рисуются стороны коробки
+
+Масштаб и положение
+  • 1 единица OBJ = 1 метр.
+  • Ось Y — вверх. Перед автобуса — +Z, зад — −Z. Ось X — поперёк (ширина).
+  • Начало координат (0,0,0) — центр днища автобуса на уровне земли:
+    длина по Z от −6 до +6, ширина по X от −1.25 до +1.25, высота по Y от 0 до 3.
+  • Игра НЕ масштабирует и НЕ сдвигает модель — делайте её в этих координатах.
+  • Столкновения и физика считаются по коробке 12 × 2.5 × 3 м, независимо от формы модели.
+
+Прозрачность
+  • Прозрачность текстуры зависит от ИМЕНИ МЕША (строки «o» или «g» в .obj).
+  • Если имя меша содержит «_transparent_» (достаточно слова transparent, регистр не важен),
+    альфа-канал его текстуры (PNG) работает: прозрачные пиксели прозрачны.
+    Пример: «_transparent_» (так назван меш в шаблоне), «windows_transparent_».
+  • У всех остальных мешей прозрачность текстуры игнорируется — они всегда непрозрачные.
+  • В примере панели с мешем «_transparent_» лежат поверх бортов; сделайте в PNG прозрачные окна,
+    и сквозь них будет виден интерьер/другая сторона.
+
+Как загрузить
+  1. Соберите архив .zip: файл(ы) .obj, .mtl и текстуры (PNG/JPG) — можно лежать в одной папке.
+  2. В игре: «Модель автобуса» → «⬆ Модель (zip с OBJ)». Модель запоминается между запусками.
+  3. Кнопка «Сброс» возвращает стандартную коробку.
+
+Текстуры
+  • Текстура берётся из строки map_Kd в .mtl; если .mtl нет — из единственной картинки в архиве
+    или из картинки, чьё имя совпадает с именем меша/материала.
+  • UV — стандартные для OBJ (начало слева внизу).
+  • Двусторонние грани: модель отображается с обеих сторон, нормали можно не поправлять.
+`;
+async function downloadTemplate(){
+  const enc=new TextEncoder(), c=document.createElement('canvas'); c.width=NW; c.height=NH; drawTemplate(c.getContext('2d'));
+  const png=await new Promise(r=>c.toBlob(r,'image/png')), pngU8=new Uint8Array(await png.arrayBuffer());
+  const blob=zipStore([{name:'bus_template.obj',data:enc.encode(templateObj())},{name:'bus_template.mtl',data:enc.encode('newmtl bus\nKd 1.0 1.0 1.0\nmap_Kd bus_template.png\n')},{name:'bus_template.png',data:pngU8},{name:'README.txt',data:enc.encode(TEMPLATE_README)}]);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='bus_template.zip'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+}
+
+$('dlmodel').addEventListener('click',()=>{ downloadTemplate().catch(e=>setStatus('Не удалось собрать шаблон: '+(e&&e.message||e))); });
+$('modelfile').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f) return; setStatus('Загрузка модели…');
+  try{ if(/\.obj$/i.test(f.name)) await applyBusObjOnly(await f.text(),f.name); else await applyBusZip(await f.arrayBuffer()); idb.set('bus',{kind:'zip',blob:f,name:f.name}); }
+  catch(err){ setStatus('Не удалось загрузить модель: '+(err&&err.message||err)); }
+});
+async function restoreBus(){
+  const d=await idb.get('bus'); if(!d||!d.blob) return;
+  try{
+    if(d.kind==='tex'){ const im=await loadImgU8(new Uint8Array(await d.blob.arrayBuffer()),'x.png'); if(im){ const t=new THREE.Texture(im); t.anisotropy=8; t.needsUpdate=true; setBusTexture(t); } }
+    else if(/\.obj$/i.test(d.name||'')) await applyBusObjOnly(await d.blob.text(),d.name); else await applyBusZip(await d.blob.arrayBuffer());
+  }catch(e){}
+}
 
 /* =====================  ПАРАМЕТРЫ ДОРОГ  ===================== */
 const ROAD={motorway:[12,6],motorway_link:[7,5],trunk:[11,6],trunk_link:[7,5],primary:[10,5],primary_link:[6.5,4],secondary:[9,4],secondary_link:[6,3],tertiary:[8,3],tertiary_link:[6,3],unclassified:[6.5,2],residential:[6.5,2],living_street:[5.5,2],service:[4,1],pedestrian:[4,0],track:[3.5,0],footway:[2,0],path:[1.8,0],cycleway:[2,0]};
@@ -1430,11 +1634,11 @@ function buildTile(T,data){
     let wc=PAL[Math.floor(rng()*PAL.length)];
     if(b.tg['building:colour']){ try{ const c=new THREE.Color(b.tg['building:colour']); wc=[c.r,c.g,c.b]; }catch(e){} }
     const rf=ROOFS[Math.floor(rng()*ROOFS.length)], rc=[rf[0],rf[1],rf[2]];
-    let acc=0;
+    let acc=0; const uoff=(Math.imul((b.id|0)^0x9e3779b9,2654435761)>>>0)%211, voff=(Math.imul((b.id|0)+7,40503)>>>0)%37;
     for(let k=0;k<p.length;k++){
       const a=p[k],c=p[(k+1)%p.length],dx=c[0]-a[0],dz=c[1]-a[1],len=Math.hypot(dx,dz); if(len<0.05) continue;
-      const nrm=[dz/len,0,-dx/len], u0=acc/6,u1=(acc+len)/6,v1=(yt-yb)/3.2;
-      bl.quad([a[0],yb,a[1]],[c[0],yb,c[1]],[c[0],yt,c[1]],[a[0],yt,a[1]],wc,{nrm},[u0,0],[u1,0],[u1,v1],[u0,v1]);
+      const nrm=[dz/len,0,-dx/len], u0=uoff+acc/6,u1=uoff+(acc+len)/6,v1=(yt-yb)/3.2;
+      bl.quad([a[0],yb,a[1]],[c[0],yb,c[1]],[c[0],yt,c[1]],[a[0],yt,a[1]],wc,{nrm},[u0,voff],[u1,voff],[u1,voff+v1],[u0,voff+v1]);
       acc+=len;
     }
     let faces=null; try{ faces=THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(q[0],q[1])),[]); }catch(e){}
@@ -1627,7 +1831,14 @@ function snapToRoad(){
 
 /* =====================  ВВОД  ===================== */
 const keys={}, touch={};
-function cycleCam(){ camMode=(camMode+1)%3; camera.near=camMode===2?0.3:1.5; camera.up.set(0,1,0); camera.updateProjectionMatrix(); snapCam=true; }
+const fc={x:0,y:10,z:0,yaw:0,pitch:0}; let fcSpeed=40;
+const _fcD=new THREE.Vector3();
+function setCamMode(m){
+  camMode=m; camera.near=m===2?0.3:1.5; camera.up.set(0,1,0); camera.updateProjectionMatrix(); snapCam=true;
+  if(m===3){ camera.getWorldDirection(_fcD); fc.x=camera.position.x; fc.y=camera.position.y; fc.z=camera.position.z; fc.yaw=Math.atan2(_fcD.x,_fcD.z); fc.pitch=Math.asin(Math.max(-1,Math.min(1,_fcD.y))); }
+  const cb=$('freecam'); if(cb) cb.checked=(m===3); saveSettings();
+}
+function cycleCam(){ setCamMode((camMode+1)%4); }
 let camMode=0, snapCam=true, camYaw=0, camPitch=0.3, camDist=19, lastDrag=0;
 addEventListener('keydown',e=>{
   if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
@@ -1654,12 +1865,13 @@ $('showtouch').addEventListener('change',e=>showTouch(e.target.checked));
   canvas.addEventListener('pointermove',e=>{
     const p=pts.get(e.pointerId); if(!p) return;
     const dx=e.clientX-p[0],dy=e.clientY-p[1]; p[0]=e.clientX;p[1]=e.clientY;
-    if(pts.size===1){ camYaw-=dx*0.006; camPitch=Math.max(0.05,Math.min(1.3,camPitch+dy*0.005)); lastDrag=performance.now(); }
+    if(pts.size===1&&camMode===3){ fc.yaw-=dx*0.004; fc.pitch=Math.max(-1.55,Math.min(1.55,fc.pitch-dy*0.004)); }
+    else if(pts.size===1){ camYaw-=dx*0.006; camPitch=Math.max(0.05,Math.min(1.3,camPitch+dy*0.005)); lastDrag=performance.now(); }
     else if(pts.size===2){ const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]); if(pd>0) camDist=Math.max(8,Math.min(80,camDist*pd/d)); pd=d; }
   });
   const up=e=>{ pts.delete(e.pointerId); pd=0; };
   canvas.addEventListener('pointerup',up); canvas.addEventListener('pointercancel',up);
-  canvas.addEventListener('wheel',e=>{ e.preventDefault(); camDist=Math.max(8,Math.min(80,camDist*(1+e.deltaY*0.0012))); },{passive:false});
+  canvas.addEventListener('wheel',e=>{ e.preventDefault(); if(camMode===3){ fcSpeed=Math.max(2,Math.min(600,fcSpeed*(1-e.deltaY*0.001))); $('fcspeed').value=Math.min(300,fcSpeed); $('fcspeedl').textContent=Math.round(fcSpeed)+' м/с'; return; } camDist=Math.max(8,Math.min(80,camDist*(1+e.deltaY*0.0012))); },{passive:false});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
@@ -1667,9 +1879,10 @@ $('showtouch').addEventListener('change',e=>showTouch(e.target.checked));
 const CPTS=[[1.15,5.9],[-1.15,5.9],[1.15,-5.9],[-1.15,-5.9],[1.15,0],[-1.15,0],[0,5.9],[0,-5.9],[1.15,3],[-1.15,3],[1.15,-3],[-1.15,-3]];
 function hitsBuilding(x,z,h){ const c=Math.cos(h),s=Math.sin(h); for(const q of CPTS){ if(pointInBuilding(x+q[0]*c+q[1]*s,z-q[0]*s+q[1]*c)) return true; } return false; }
 function physics(dt){
-  const thr=((keys.KeyW||keys.ArrowUp||touch.gas)?1:0)-((keys.KeyS||keys.ArrowDown||touch.brake)?1:0);
-  const st=((keys.KeyA||keys.ArrowLeft||touch.left)?1:0)-((keys.KeyD||keys.ArrowRight||touch.right)?1:0);
-  const hand=keys.Space||touch.hand, boost=keys.ShiftLeft||keys.ShiftRight||touch.turbo;
+  const FREE=camMode===3;
+  const thr=FREE?0:((keys.KeyW||keys.ArrowUp||touch.gas)?1:0)-((keys.KeyS||keys.ArrowDown||touch.brake)?1:0);
+  const st=FREE?0:((keys.KeyA||keys.ArrowLeft||touch.left)?1:0)-((keys.KeyD||keys.ArrowRight||touch.right)?1:0);
+  const hand=FREE||keys.Space||touch.hand, boost=!FREE&&(keys.ShiftLeft||keys.ShiftRight||touch.turbo);
   const vmax=boost?60:22;
   bus.steer+=(st-bus.steer)*Math.min(1,(st===0?9:4.5)*dt);
   let v=bus.v;
@@ -1701,13 +1914,18 @@ const camPos=new THREE.Vector3(), tmpV=new THREE.Vector3(), lookV=new THREE.Vect
 function lampState(t){ return t<8?1:t<10?2:0; }
 function updateCamera(dt){
   const sh=Math.sin(bus.h),ch=Math.cos(bus.h);
-  if(performance.now()-lastDrag>2200){ camYaw*=Math.max(0,1-dt*1.6); camPitch+=(0.3-camPitch)*Math.min(1,dt*1.2); }
   if(camMode===0){
     const yaw=bus.h+Math.PI+camYaw, hd=camDist*Math.cos(camPitch), hy=2.2+bus.y+camDist*Math.sin(camPitch);
     tmpV.set(bus.x+Math.sin(yaw)*hd,hy,bus.z+Math.cos(yaw)*hd);
     if(snapCam) camera.position.copy(tmpV); else camera.position.lerp(tmpV,1-Math.exp(-dt*7));
     { const gyc=th(camera.position.x,camera.position.z)+1.5; if(camera.position.y<gyc) camera.position.y=gyc; }
-    lookV.set(bus.x+sh*5,2+bus.y,bus.z+ch*5); camera.up.set(0,1,0); camera.lookAt(lookV);
+    lookV.set(bus.x,1.6+bus.y,bus.z); camera.up.set(0,1,0); camera.lookAt(lookV);
+  }else if(camMode===3){
+    const f=((keys.KeyW||keys.ArrowUp||touch.gas)?1:0)-((keys.KeyS||keys.ArrowDown||touch.brake)?1:0), r=((keys.KeyD||keys.ArrowRight||touch.right)?1:0)-((keys.KeyA||keys.ArrowLeft||touch.left)?1:0), u=((keys.KeyE||keys.Space||touch.hand)?1:0)-((keys.KeyQ||keys.ControlLeft)?1:0);
+    const sp=fcSpeed*((keys.ShiftLeft||keys.ShiftRight||touch.turbo)?4:1)*dt, cp=Math.cos(fc.pitch), sy=Math.sin(fc.yaw), cy=Math.cos(fc.yaw);
+    fc.x+=(sy*cp*f-cy*r)*sp; fc.y+=(Math.sin(fc.pitch)*f+u)*sp; fc.z+=(cy*cp*f+sy*r)*sp;
+    { const g=th(fc.x,fc.z)+0.6; if(fc.y<g) fc.y=g; }
+    camera.position.set(fc.x,fc.y,fc.z); camera.up.set(0,1,0); camera.lookAt(fc.x+sy*cp,fc.y+Math.sin(fc.pitch),fc.z+cy*cp);
   }else if(camMode===1){
     camera.position.set(bus.x,camDist*5+30+bus.y,bus.z); camera.up.set(sh,0,ch); camera.lookAt(bus.x,bus.y,bus.z);
   }else{
@@ -1762,14 +1980,37 @@ function animate(){
     $('w2').textContent=[rev.district,rev.city].filter(Boolean).join(', ');
     if(!rev.pending&&performance.now()-rev.t>7000&&(!rev.set||Math.hypot((ll[1]-rev.lon)*kx,(ll[0]-rev.lat)*kz)>150)) reverseGeo(ll[0],ll[1]);
   }
-  tHash+=dt; if(tHash>4){ tHash=0; const ll=unproj(bus.x,bus.z); try{ history.replaceState(null,'','#'+ll[0].toFixed(5)+','+ll[1].toFixed(5)); }catch(e){} }
+  tHash+=dt; if(tHash>4){ tHash=0; const ll=unproj(bus.x,bus.z); try{ history.replaceState(null,'','#'+ll[0].toFixed(5)+','+ll[1].toFixed(5)); }catch(e){} try{ localStorage.setItem('osmbus.pos',ll[0].toFixed(5)+','+ll[1].toFixed(5)); }catch(e){} }
   fxRender();
 }
+
+/* =====================  СОХРАНЕНИЕ НАСТРОЕК  ===================== */
+$('freecam').addEventListener('change',e=>{ setCamMode(e.target.checked?3:0); e.target.blur(); });
+$('fcspeed').addEventListener('input',e=>{ fcSpeed=+e.target.value; $('fcspeedl').textContent=Math.round(fcSpeed)+' м/с'; });
+$('camfov').addEventListener('input',e=>{ camera.fov=+e.target.value; camera.updateProjectionMatrix(); $('fovl').textContent=Math.round(camera.fov)+'°'; });
+const SKEY='osmbus.settings.v1', PSKIP=new Set(['tod','file','modelfile','coord','preset','freecam']), NOEV=new Set(['src','sgurl']);
+const keyOf=e=>e.id||(e.dataset&&e.dataset.fx?'fx.'+e.dataset.fx:null);
+const persistEls=()=>[...document.querySelectorAll('#panel input,#panel select')].filter(e=>{ const k=keyOf(e); return k&&!PSKIP.has(k)&&e.type!=='file'; });
+let saveT=0;
+function saveSettings(){ clearTimeout(saveT); saveT=setTimeout(()=>{ try{ const o={camMode:camMode===3?0:camMode}; for(const e of persistEls()) o[keyOf(e)]=e.type==='checkbox'?e.checked:e.value; localStorage.setItem(SKEY,JSON.stringify(o)); }catch(err){} },250); }
+function restoreSettings(){
+  let o=null; try{ o=JSON.parse(localStorage.getItem(SKEY)||'null'); }catch(e){} if(!o) return;
+  for(const e of persistEls()){
+    const k=keyOf(e); if(!(k in o)) continue;
+    if(e.type==='checkbox') e.checked=!!o[k];
+    else { if(e.tagName==='SELECT'&&![...e.options].some(op=>op.value===String(o[k]))) continue; e.value=o[k]; }
+    if(!NOEV.has(k)) e.dispatchEvent(new Event(e.type==='range'?'input':'change',{bubbles:true}));
+  }
+  if(o.camMode>0) setCamMode(o.camMode%3);
+}
+$('panel').addEventListener('change',saveSettings); $('panel').addEventListener('input',saveSettings);
 
 /* =====================  СТАРТ  ===================== */
 window.__dbg={demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
 {
+  restoreSettings(); restoreBus();
   let start=null; const h=location.hash.replace('#',''); if(h){ start=parseCoords(h); }
+  if(!start){ try{ const sp=localStorage.getItem('osmbus.pos'); if(sp) start=parseCoords(sp); }catch(e){} }
   if(!start) start=[55.7558,37.6176];
   $('coord').value=start[0]+', '+start[1];
   teleport(start[0],start[1]);
