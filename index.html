@@ -42,6 +42,12 @@ input[type=range]{flex:1;min-width:80px}
 #w2{font-size:11px;color:#9fb4cc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:13px}
 @media (max-width:760px){#where{left:auto;right:max(10px,env(safe-area-inset-right));transform:none;max-width:calc(100vw - 190px)}}
 .collapsed #pbody{display:none}
+#spawn{position:fixed;inset:0;background:rgba(5,10,18,.72);z-index:20;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:10px;box-sizing:border-box}
+#spawn.on{display:flex}
+#spcv{width:min(94vw,calc(100vh - 150px),620px);height:min(94vw,calc(100vh - 150px),620px);border-radius:12px;background:#10202e;border:1px solid rgba(255,255,255,.3);touch-action:none}
+#spbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#spbar button{padding:9px 14px}
+#spmsg{color:#fff;font:14px/1.3 sans-serif;text-align:center;max-width:94vw}
 #hideui{position:fixed;right:max(10px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top));width:36px;height:36px;border-radius:10px;padding:0;font-size:18px;z-index:5;background:var(--bg);border:1px solid rgba(255,255,255,.2);color:#fff;cursor:pointer}
 body.nui #hideui{opacity:.35}
 body.nui #panel,body.nui #where,body.nui #hud,body.nui #mmap{display:none!important}
@@ -67,7 +73,10 @@ body.nui #panel,body.nui #where,body.nui #hud,body.nui #mmap{display:none!import
     <div id="status"></div>
 
     <h2>Транспорт</h2>
-    <div class="row"><label>Транспортное средство <select id="veh" style="flex:none"><option value="bus">🚌 Автобус (12 × 2.5 × 3 м)</option><option value="car">🚗 Машина (4.5 × 1.9 × 1.45 м)</option></select></label></div>
+    <div class="row"><label>Транспортное средство <select id="veh" style="flex:none"><option value="bus">🚌 Автобус (12 × 2.5 × 3 м)</option><option value="car">🚗 Машина (4.5 × 1.9 × 1.45 м)</option><option value="tram">🚋 Трамвай (15 × 2.6 × 3.4 м, по рельсам)</option></select></label></div>
+    <div class="row"><button id="spawnbtn">🗺 Трамвай: выбрать место на карте путей</button></div>
+    <div class="row"><button id="turnbtn">🔄 Развернуть транспорт (на 180°)</button></div>
+    <div class="small">Трамвай едет только по путям. На развилке стрелку переключают A / D или ← / → (обе сразу — прямо); после проезда развилки стрелка возвращается «прямо».</div>
     <div class="row">
       <label class="btn" style="display:inline-flex">⬆ Модель (zip с OBJ)<input type="file" id="modelfile" accept=".zip,.obj,application/zip" hidden></label>
       <button id="dlmodel">⬇ Шаблон (zip: obj, mtl, png, camera.txt)</button>
@@ -154,12 +163,15 @@ body.nui #panel,body.nui #where,body.nui #hud,body.nui #mmap{display:none!import
 
 <button id="hideui" title="Скрыть/показать интерфейс (H)">👁</button>
 <canvas id="mmap" title="Клик — переключить масштаб (вокруг игрока / весь маршрут)"></canvas>
+<div id="spawn"><div id="spmsg"></div><canvas id="spcv"></canvas>
+  <div id="spbar"><button id="spzo">➖</button><button id="spzi">➕</button><button id="spturn">🔄 Развернуть</button><button id="spclose">✔ Готово</button></div></div>
 <div id="where"><div id="w1">—</div><div id="w2"></div></div>
 
 <div id="hud">
   <div><b id="speed">0</b> км/ч</div>
   <div id="pos">—</div>
   <div id="stopname"></div>
+  <div id="swinfo" style="display:none"></div>
 </div>
 
 <div id="touch">
@@ -594,6 +606,7 @@ const matGlow=new THREE.MeshBasicMaterial({map:glowTex,transparent:true,blending
 /* ---- развёртка автобуса (px). 100 px = 1 м. Сетка 2700×800 (27:8) ---- */
 const VEHS={
   bus:{name:'Автобус',W:2.5,H:3,L:12,cam:[0.55,2.55,4.4],vmax:22,boost:60,acc:6,accB:16,wb:7,look:1.6,camH:2.2,dist:19,lamp:0.37,tpl:'bus_template'},
+  tram:{name:'Трамвай',W:2.6,H:3.4,L:15,cam:[0.7,2.75,6.9],vmax:18,boost:28,acc:3.2,accB:6,wb:8,look:2.0,camH:3.0,dist:22,lamp:0.22,tpl:'tram_template'},
   car:{name:'Машина',W:1.9,H:1.45,L:4.5,cam:[0.42,1.2,0.5],vmax:32,boost:75,acc:9,accB:20,wb:2.7,look:0.9,camH:1.4,dist:9,lamp:0.4,tpl:'car_template'}
 };
 let VK='bus',BW,BH,BL,HX,HL,NW,NH,FACES,CAMOFF;
@@ -661,7 +674,32 @@ function drawCarLivery(ctx){
   { const [x0,y0,x1,y1]=FACES.top; ctx.fillStyle='#b3362a'; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(x0+120,y0+20,200,y1-y0-40); }
   { const [x0,y0,x1,y1]=FACES.bottom; ctx.fillStyle=dark; ctx.fillRect(x0,y0,x1-x0,y1-y0); }
 }
-function drawLiveryFor(ctx){ if(VK==='car') drawCarLivery(ctx); else drawLivery(ctx); }
+function drawTramLivery(ctx){
+  ctx.clearRect(0,0,NW,NH);
+  const body='#e9ecf0', red='#b3221b', dark='#23272d', glass='rgba(35,70,100,0.45)';
+  const glassRect=(x,y,w,h)=>{ ctx.clearRect(x,y,w,h); ctx.fillStyle=glass; ctx.fillRect(x,y,w,h); };
+  function side(face,flip){
+    const [x0,y0,x1,y1]=FACES[face], w=x1-x0, h=y1-y0, X=l=>flip?x1-l:x0+l;
+    const R=(l0,l1,t0,t1,fn)=>{ const a=X(l0),b=X(l1); fn(Math.min(a,b),y0+t0,Math.abs(b-a),t1-t0); };
+    ctx.fillStyle=body; ctx.fillRect(x0,y0,w,h);
+    ctx.fillStyle=red; ctx.fillRect(x0,y0+h*0.78,w,h*0.22); ctx.fillRect(x0,y0,w,16);
+    ctx.fillStyle='rgba(0,0,0,.18)'; ctx.fillRect(x0,y0+h*0.78-3,w,3);
+    const doors=[[230,350],[640,760],[1050,1170]];
+    for(let l=60;l<w-60;l+=125){ if(doors.some(d=>l+110>d[0]-10&&l<d[1]+10)) continue; R(l,l+110,50,205,glassRect); }
+    for(const [a,b] of doors){ R(a,b,40,h*0.78-6,glassRect); ctx.fillStyle=dark; R(a-4,a,36,h*0.78-2,(x,y,ww,hh)=>ctx.fillRect(x,y,ww,hh)); R(b,b+4,36,h*0.78-2,(x,y,ww,hh)=>ctx.fillRect(x,y,ww,hh)); R((a+b)/2-1.5,(a+b)/2+1.5,40,h*0.78-6,(x,y,ww,hh)=>{ ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(x,y,ww,hh); }); }
+    ctx.fillStyle='#ffe9a8'; R(0,14,230,262,(x,y,ww,hh)=>ctx.fillRect(x,y,ww,hh)); ctx.fillStyle='#d11'; R(w-14,w,230,262,(x,y,ww,hh)=>ctx.fillRect(x,y,ww,hh));
+    ctx.fillStyle=dark; R(0,w,h-12,h,(x,y,ww,hh)=>ctx.fillRect(x,y,ww,hh));
+  }
+  side('left',false); side('right',true);
+  { const [x0,y0,x1,y1]=FACES.front; ctx.fillStyle=body; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.fillStyle=red; ctx.fillRect(x0,y0+(y1-y0)*0.78,x1-x0,(y1-y0)*0.22);
+    glassRect(x0+16,y0+44,x1-x0-32,150); ctx.fillStyle='#ffd24a'; ctx.fillRect(x0+60,y0+14,x1-x0-120,22);
+    ctx.fillStyle='#ffe9a8'; ctx.fillRect(x0+14,y0+212,40,28); ctx.fillRect(x1-54,y0+212,40,28); ctx.fillStyle=dark; ctx.fillRect(x0+70,y0+280,x1-x0-140,30); }
+  { const [x0,y0,x1,y1]=FACES.back; ctx.fillStyle=body; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.fillStyle=red; ctx.fillRect(x0,y0+(y1-y0)*0.78,x1-x0,(y1-y0)*0.22);
+    glassRect(x0+16,y0+44,x1-x0-32,150); ctx.fillStyle='#d11'; ctx.fillRect(x0+14,y0+212,40,28); ctx.fillRect(x1-54,y0+212,40,28); }
+  { const [x0,y0,x1,y1]=FACES.top; ctx.fillStyle='#a7adb4'; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.fillStyle='#8a9097'; for(const l of [180,560,940,1320]) ctx.fillRect(x0+l,y0+50,200,y1-y0-100); }
+  { const [x0,y0,x1,y1]=FACES.bottom; ctx.fillStyle=dark; ctx.fillRect(x0,y0,x1-x0,y1-y0); }
+}
+function drawLiveryFor(ctx){ if(VK==='car') drawCarLivery(ctx); else if(VK==='tram') drawTramLivery(ctx); else drawLivery(ctx); }
 function drawTemplate(ctx){
   ctx.clearRect(0,0,NW,NH);
   const col={front:'#ffd6d6',left:'#d6e8ff',back:'#ffe8c8',right:'#d6ffe0',top:'#f1d6ff',bottom:'#e0e0e0'};
@@ -1068,7 +1106,8 @@ const idb={
   async set(k,v){ try{ const db=await this.open(); await new Promise(res=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=tx.onerror=tx.onabort=()=>res(); }); }catch(e){} },
   async del(k){ try{ const db=await this.open(); await new Promise(res=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete=tx.onerror=tx.onabort=()=>res(); }); }catch(e){} }
 };
-function templateObj(){ let t=templateObj0(); if(VK==='car') t=t.replace('# Шаблон автобуса','# Шаблон машины').replace(/перед автобуса/g,'перед машины').replace('длина (Z) 12 м, ширина (X) 2.5 м, высота (Y) 3 м','длина (Z) '+BL+' м, ширина (X) '+BW+' м, высота (Y) '+BH+' м').replace(/bus_template/g,VEHS[VK].tpl); return t; }
+const VNM={car:{G:'машины',N:'Машина',U:'МАШИНЫ'},tram:{G:'трамвая',N:'Трамвай',U:'ТРАМВАЯ'}};
+function templateObj(){ let t=templateObj0(); if(VK!=='bus') t=t.replace('# Шаблон автобуса','# Шаблон '+VNM[VK].G).replace(/перед автобуса/g,'перед '+VNM[VK].G).replace('длина (Z) 12 м, ширина (X) 2.5 м, высота (Y) 3 м','длина (Z) '+BL+' м, ширина (X) '+BW+' м, высота (Y) '+BH+' м').replace(/bus_template/g,VEHS[VK].tpl); return t; }
 function templateObj0(){
   const g=busGeometry(), P=g.attributes.position.array, Nn=g.attributes.normal.array, U=g.attributes.uv.array; const L=[];
   L.push('# Шаблон автобуса. 1 единица = 1 метр. Y — вверх, перед автобуса — +Z, начало координат — центр днища на уровне земли.','# Размер коробки: длина (Z) 12 м, ширина (X) 2.5 м, высота (Y) 3 м.','mtllib bus_template.mtl','usemtl bus','o bus_body');
@@ -1124,7 +1163,7 @@ const TEMPLATE_README=`ШАБЛОН АВТОБУСА ДЛЯ OSM BUS 3D
 `;
 function templateReadme(){
   let t=TEMPLATE_README;
-  if(VK==='car') t=t.replace(/ШАБЛОН АВТОБУСА/g,'ШАБЛОН МАШИНЫ').replace(/автобуса/g,'машины').replace(/Автобус/g,'Машина').replace(/bus_template/g,VEHS[VK].tpl).replace('12 × 2.5 × 3 м',BL+' × '+BW+' × '+BH+' м').replace('от −6 до +6',' от −'+HL+' до +'+HL).replace('от −1.25 до +1.25','от −'+HX+' до +'+HX).replace('от 0 до 3','от 0 до '+BH).replace('2900×800',NW+'×'+NH).replace(/Модель автобуса/g,'Транспорт');
+  if(VK!=='bus') t=t.replace(/ШАБЛОН АВТОБУСА/g,'ШАБЛОН '+VNM[VK].U).replace(/автобуса/g,VNM[VK].G).replace(/Автобус/g,VNM[VK].N).replace(/bus_template/g,VEHS[VK].tpl).replace('12 × 2.5 × 3 м',BL+' × '+BW+' × '+BH+' м').replace('от −6 до +6',' от −'+HL+' до +'+HL).replace('от −1.25 до +1.25','от −'+HX+' до +'+HX).replace('от 0 до 3','от 0 до '+BH).replace('2900×800',NW+'×'+NH).replace(/Модель автобуса/g,'Транспорт');
   return t+`
 camera.txt — камера от 1-го лица
   • Одна строка: x y z (метры, в координатах модели). Пример: ${VEHS[VK].cam.join(' ')}
@@ -1163,10 +1202,153 @@ async function setVehicle(k){
   livCanvas.width=NW; livCanvas.height=NH; drawLiveryFor(livCanvas.getContext('2d')); const t=new THREE.CanvasTexture(livCanvas); t.anisotropy=8; setBusTexture(t);
   for(const [h,sx] of [[headL,0.32*BW],[headR,-0.32*BW]]){ h.position.set(sx,BH*V.lamp,HL); h.target.position.set(sx,0,HL+30); }
   const hx=HX-0.1, hl=HL-0.1; CPTS=[[hx,hl],[-hx,hl],[hx,-hl],[-hx,-hl],[hx,0],[-hx,0],[0,hl],[0,-hl],[hx,hl/2],[-hx,hl/2],[hx,-hl/2],[-hx,-hl/2]];
-  camDist=V.dist; snapCam=true;
+  camDist=V.dist; snapCam=true; tr.on=false; tr.want=false; tr.pref='S'; if(k==='tram') setTimeout(openSpawn,300); else closeSpawn();
   if(tok===vehTok) await restoreBus();
 }
 $('veh').addEventListener('change',e=>{ setVehicle(e.target.value); e.target.blur(); });
+/* =====================  РЕЛЬСОВАЯ СЕТЬ И ТРАМВАЙ  ===================== */
+const RG={hash:new Map()}; let rgId=0; const tr={on:false,want:false,wantT:0,a:null,b:null,d:0,len:1,pref:'S'};
+function rgNode(x,z){
+  const cx=Math.floor(x/4), cz=Math.floor(z/4);
+  for(let i=cx-1;i<=cx+1;i++)for(let j=cz-1;j<=cz+1;j++){ const l=RG.hash.get(i+','+j); if(l) for(const n of l) if(Math.abs(n.x-x)<1.0&&Math.abs(n.z-z)<1.0) return n; }
+  const n={x,z,adj:new Map(),id:++rgId}, k=cx+','+cz; let l=RG.hash.get(k); if(!l){ l=[]; RG.hash.set(k,l); } l.push(n); return n;
+}
+function rgAdd(a,b){ if(a===b) return; a.adj.set(b,(a.adj.get(b)||0)+1); b.adj.set(a,(b.adj.get(a)||0)+1); }
+function rgDel(a,b){ for(const [p,q] of [[a,b],[b,a]]){ const c=(p.adj.get(q)||0)-1; if(c<=0) p.adj.delete(q); else p.adj.set(q,c); } }
+function regRailAll(T,ways){
+  /* конец одного пути, лежащий на середине другого (T-стрелка), вставляется вершиной в тот путь — иначе развилки не будет */
+  const L=ways.map(r=>r.pts.slice());
+  for(let i=0;i<L.length;i++){
+    for(const e of [L[i][0],L[i][L[i].length-1]]){
+      for(let j=0;j<L.length;j++){
+        if(i===j) continue; const P=L[j]; let hit=false;
+        for(const q of P) if(Math.abs(q[0]-e[0])<1.0&&Math.abs(q[1]-e[1])<1.0){ hit=true; break; } if(hit) continue;
+        for(let k=0;k<P.length-1;k++){
+          const a=P[k],b=P[k+1],dx=b[0]-a[0],dz=b[1]-a[1],L2=dx*dx+dz*dz; if(L2<1e-6) continue;
+          const t=((e[0]-a[0])*dx+(e[1]-a[1])*dz)/L2; if(t<=0.01||t>=0.99) continue;
+          if(Math.hypot(a[0]+dx*t-e[0],a[1]+dz*t-e[1])<1.2){ P.splice(k+1,0,[e[0],e[1]]); break; }
+        }
+      }
+    }
+  }
+  for(const P of L) regRail(T,P);
+}
+function regRail(T,pts){
+  T.railEdges=T.railEdges||[]; let prev=null;
+  for(const q of pts){ const n=rgNode(q[0],q[1]); if(prev&&n!==prev){ rgAdd(prev,n); T.railEdges.push([prev,n]); } prev=n; }
+}
+function railSnap(x,z,maxd,h){
+  if(!(maxd>0)) return null; maxd=Math.min(maxd,400); const rc=Math.min(110,Math.ceil(maxd/4)+8), cx=Math.floor(x/4), cz=Math.floor(z/4); let best=null;
+  for(let i=cx-rc;i<=cx+rc;i++)for(let j=cz-rc;j<=cz+rc;j++){ const l=RG.hash.get(i+','+j); if(!l) continue;
+    for(const n of l) for(const m of n.adj.keys()){
+      const dx=m.x-n.x,dz=m.z-n.z,L2=dx*dx+dz*dz; if(L2<1e-6) continue; let t=((x-n.x)*dx+(z-n.z)*dz)/L2; t=Math.max(0,Math.min(1,t));
+      const dd=Math.hypot(n.x+dx*t-x,n.z+dz*t-z); if(dd<(best?best.dist:maxd)) best={a:n,b:m,t,dist:dd,len:Math.sqrt(L2)}; } }
+  if(!best) return null;
+  if(h!=null&&((best.b.x-best.a.x)*Math.sin(h)+(best.b.z-best.a.z)*Math.cos(h))<0){ const q=best.a; best.a=best.b; best.b=q; best.t=1-best.t; }
+  best.d=best.t*best.len; return best;
+}
+function chooseNext(from,at,pref){
+  const c=[...at.adj.keys()].filter(n=>n!==from); if(!c.length) return null; if(c.length===1) return c[0];
+  let mx=at.x-from.x, mz=at.z-from.z; const ml=Math.hypot(mx,mz)||1; mx/=ml; mz/=ml; const lx=mz, lz=-mx;
+  let best=null,bs=-9;
+  for(const n of c){ const dx=n.x-at.x,dz=n.z-at.z,l=Math.hypot(dx,dz)||1, fwd=(dx*mx+dz*mz)/l, side=(dx*lx+dz*lz)/l; let sc;
+    if(pref==='L') sc=side; else if(pref==='R') sc=-side; else sc=fwd-Math.abs(side)*0.01;   // L — самая левая ветка, R — самая правая, S — самая прямая
+    if(sc>bs){ bs=sc; best=n; } }
+  return best;
+}
+function pickNext(from,at){ const n=at.adj.size>2?chooseNext(from,at,tr.pref):chooseNext(from,at,'S'); if(at.adj.size>2) tr.pref='S'; return n; }
+/* плавные повороты: в вершинах без развилок угол скругляется квадратичной кривой Безье */
+function cornerR(p,n,q){ return Math.min(14,0.45*Math.min(Math.hypot(n.x-p.x,n.z-p.z),Math.hypot(q.x-n.x,q.z-n.z))); }
+function bez(x0,z0,cx,cz,x2,z2,t){ const u=1-t; let tx=2*u*(cx-x0)+2*t*(x2-cx), tz=2*u*(cz-z0)+2*t*(z2-cz); const l=Math.hypot(tx,tz)||1; return [u*u*x0+2*u*t*cx+t*t*x2, u*u*z0+2*u*t*cz+t*t*z2, tx/l, tz/l]; }
+function trackPoint(a,b,d,len){
+  const ux=(b.x-a.x)/len, uz=(b.z-a.z)/len;
+  if(b.adj.size===2){ let c=null; for(const n of b.adj.keys()) if(n!==a) c=n;
+    if(c){ const r=cornerR(a,b,c); if(r>0.5&&d>len-r){ const l2=Math.hypot(c.x-b.x,c.z-b.z)||1, vx=(c.x-b.x)/l2, vz=(c.z-b.z)/l2; return bez(b.x-ux*r,b.z-uz*r,b.x,b.z,b.x+vx*r,b.z+vz*r,0.5*(r-(len-d))/r); } } }
+  if(a.adj.size===2){ let z=null; for(const n of a.adj.keys()) if(n!==b) z=n;
+    if(z){ const r=cornerR(z,a,b); if(r>0.5&&d<r){ const l0=Math.hypot(a.x-z.x,a.z-z.z)||1, wx=(a.x-z.x)/l0, wz=(a.z-z.z)/l0; return bez(a.x-wx*r,a.z-wz*r,a.x,a.z,a.x+ux*r,a.z+uz*r,0.5+0.5*d/r); } } }
+  return [a.x+ux*d,a.z+uz*d,ux,uz];
+}
+function tramStep(dt,v){
+  const L=keys.KeyA||keys.ArrowLeft||touch.left, R=keys.KeyD||keys.ArrowRight||touch.right;
+  if(L&&R) tr.pref='S'; else if(L) tr.pref='L'; else if(R) tr.pref='R';
+  tr.d+=v*dt;
+  for(let g=0;g<24;g++){
+    if(tr.d>tr.len){ const c=pickNext(tr.a,tr.b); if(!c){ tr.d=tr.len; v=0; break; } tr.d-=tr.len; tr.a=tr.b; tr.b=c; tr.len=Math.max(0.05,Math.hypot(c.x-tr.a.x,c.z-tr.a.z)); }
+    else if(tr.d<0){ const c=pickNext(tr.b,tr.a); if(!c){ tr.d=0; v=0; break; } const nl=Math.max(0.05,Math.hypot(c.x-tr.a.x,c.z-tr.a.z)); tr.b=tr.a; tr.a=c; tr.len=nl; tr.d=nl+tr.d; }
+    else break;
+  }
+  const P=trackPoint(tr.a,tr.b,tr.d,tr.len||1); bus.x=P[0]; bus.z=P[1];
+  let dh=Math.atan2(P[2],P[3])-bus.h; dh=Math.atan2(Math.sin(dh),Math.cos(dh)); bus.h+=Math.abs(dh)>1.2?dh:dh*Math.min(1,16*dt);
+  return v;
+}
+let trT=0;
+function tramMaint(dt){
+  if(VK!=='tram'||tr.on) return; trT+=dt; if(trT<0.4) return; trT=0;
+  const r=railSnap(bus.x,bus.z,3.5,bus.h); if(!r) return;
+  { const dx=r.b.x-r.a.x,dz=r.b.z-r.a.z,l=Math.hypot(dx,dz)||1; if((dx*Math.sin(bus.h)+dz*Math.cos(bus.h))/l<0.8) return; }
+  tr.a=r.a; tr.b=r.b; tr.d=r.d; tr.len=r.len; tr.on=true; tr.pref='S'; setStatus('Трамвай на рельсах');
+}
+/* ---- карта путей для выбора места трамвая ---- */
+const sp={on:false,cx:0,cz:0,r:700,mx:null,mz:null}, spcv=$('spcv'), spx=spcv.getContext('2d');
+function openSpawn(){ if(VK!=='tram') return; sp.on=true; sp.cx=bus.x; sp.cz=bus.z; if(!sp.r) sp.r=700; $('spawn').classList.add('on'); drawSpawn(); }
+function closeSpawn(){ sp.on=false; $('spawn').classList.remove('on'); }
+function drawSpawn(){
+  if(!sp.on) return; const dpr=Math.min(2,window.devicePixelRatio||1), W=spcv.clientWidth||400, H=spcv.clientHeight||400;
+  if(spcv.width!==Math.round(W*dpr)){ spcv.width=Math.round(W*dpr); spcv.height=Math.round(H*dpr); }
+  const c=spx; c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H); const sc=W/(2*sp.r), X=x=>(x-sp.cx)*sc+W/2, Z=z=>(z-sp.cz)*sc+H/2;
+  c.strokeStyle='rgba(255,255,255,.07)'; c.lineWidth=1; { const st=sp.r>1000?500:sp.r>400?200:100; for(let g=Math.ceil((sp.cx-sp.r)/st)*st;g<sp.cx+sp.r;g+=st){ c.beginPath(); c.moveTo(X(g),0); c.lineTo(X(g),H); c.stroke(); } for(let g=Math.ceil((sp.cz-sp.r)/st)*st;g<sp.cz+sp.r;g+=st){ c.beginPath(); c.moveTo(0,Z(g)); c.lineTo(W,Z(g)); c.stroke(); } }
+  let n=0; c.strokeStyle='#ffd24a'; c.lineWidth=2.5; c.lineCap='round'; c.beginPath();
+  for(const l of RG.hash.values()) for(const a of l) for(const b of a.adj.keys()){ if(b.id<a.id) continue; const ax=X(a.x),az=Z(a.z),bx=X(b.x),bz=Z(b.z); if((ax<-20&&bx<-20)||(ax>W+20&&bx>W+20)||(az<-20&&bz<-20)||(az>H+20&&bz>H+20)) continue; c.moveTo(ax,az); c.lineTo(bx,bz); n++; }
+  c.stroke();
+  // игрок / выбранное место
+  const px=X(bus.x), pz=Z(bus.z), sx=Math.sin(bus.h), szz=Math.cos(bus.h);
+  c.fillStyle=tr.on?'#2ecc71':'#4aa3ff'; c.strokeStyle='#fff'; c.lineWidth=2; c.beginPath(); c.moveTo(px+sx*13,pz+szz*13); c.lineTo(px-sx*8-szz*8,pz-szz*8+sx*8); c.lineTo(px-sx*8+szz*8,pz-szz*8-sx*8); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle='rgba(255,255,255,.85)'; c.font='bold 12px sans-serif'; c.textAlign='right'; c.fillText('С↑ · ширина '+Math.round(sp.r*2)+' м',W-8,H-8);
+  $('spmsg').textContent=n?(tr.on?'Трамвай поставлен (стрелка — направление). Выберите другое место, «Развернуть» или «Готово».':'Коснитесь жёлтой линии пути, куда поставить трамвай. Перетаскивание — сдвиг карты.'):'Пути не найдены (или ещё загружаются). Увеличьте масштаб или переместитесь ближе к трамвайным путям.';
+}
+function spawnAt(x,z){
+  const r=railSnap(x,z,Math.max(12,28/((spcv.clientWidth||400)/(2*sp.r))),null); if(!r){ setStatus('Рядом с точкой нет путей'); return; }
+  tr.a=r.a; tr.b=r.b; tr.d=r.d; tr.len=r.len; tr.on=true; tr.pref='S';
+  const dx=r.b.x-r.a.x, dz=r.b.z-r.a.z; bus.x=r.a.x+dx*r.t; bus.z=r.a.z+dz*r.t; bus.h=Math.atan2(dx,dz); bus.v=0; bus.y=th(bus.x,bus.z); bus.pitch=0; bus.roll=0; snapCam=true; drawSpawn();
+}
+{ let dr=null;
+  spcv.addEventListener('pointerdown',e=>{ dr={x:e.clientX,y:e.clientY,cx:sp.cx,cz:sp.cz,moved:false}; try{ spcv.setPointerCapture(e.pointerId); }catch(_){} });
+  spcv.addEventListener('pointermove',e=>{ if(!dr) return; const k=2*sp.r/spcv.clientWidth, dx=e.clientX-dr.x, dy=e.clientY-dr.y; if(Math.hypot(dx,dy)>6) dr.moved=true; if(dr.moved){ sp.cx=dr.cx-dx*k; sp.cz=dr.cz-dy*k; drawSpawn(); } });
+  spcv.addEventListener('pointerup',e=>{ if(dr&&!dr.moved){ const rc=spcv.getBoundingClientRect(), k=2*sp.r/rc.width; spawnAt(sp.cx+(e.clientX-rc.left-rc.width/2)*k, sp.cz+(e.clientY-rc.top-rc.height/2)*k); } dr=null; });
+}
+$('spzi').addEventListener('click',()=>{ sp.r=Math.max(80,sp.r/1.6); drawSpawn(); });
+$('spzo').addEventListener('click',()=>{ sp.r=Math.min(3000,sp.r*1.6); drawSpawn(); });
+$('spturn').addEventListener('click',()=>{ turnAround(); drawSpawn(); });
+$('spclose').addEventListener('click',closeSpawn);
+$('spawnbtn').addEventListener('click',()=>{ if(VK!=='tram'){ $('veh').value='tram'; $('veh').dispatchEvent(new Event('change')); } else openSpawn(); $('spawnbtn').blur(); });
+setInterval(()=>{ if(sp.on) drawSpawn(); },600);
+function turnAround(){
+  bus.h+=Math.PI; bus.v=0; snapCam=true;
+  if(VK==='tram'&&tr.on){ const q=tr.a; tr.a=tr.b; tr.b=q; tr.d=tr.len-tr.d; }
+}
+$('turnbtn').addEventListener('click',()=>{ turnAround(); $('turnbtn').blur(); });
+let swArrow=null;
+function swHud(){
+  const el=$('swinfo'); if(VK!=='tram'){ el.style.display='none'; if(swArrow) swArrow.visible=false; return; } el.style.display='block';
+  let t, show=false;
+  if(!tr.on) t=sp.on?'Выберите путь на карте':'Вне путей: подъедите к рельсам или выберите место на карте';
+  else {
+    const sel=tr.pref==='L'?'◀ налево':tr.pref==='R'?'направо ▶':'▲ прямо';
+    // ближайшая развилка по ходу движения
+    const back=bus.v<-0.5; let prev=back?tr.b:tr.a, node=back?tr.a:tr.b, dist=back?tr.d:tr.len-tr.d, jn=null;
+    for(let i=0;i<8&&dist<250;i++){
+      const c=[...node.adj.keys()].filter(n=>n!==prev); if(!c.length) break;
+      if(c.length>1){ jn={prev,node,dist}; break; }
+      dist+=Math.hypot(c[0].x-node.x,c[0].z-node.z); prev=node; node=c[0];
+    }
+    if(jn){ const ch=chooseNext(jn.prev,jn.node,tr.pref); t='Развилка через '+Math.round(jn.dist)+' м · стрелка: '+sel;
+      if(ch){ if(!swArrow){ swArrow=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(),5,0x2ecc71,1.8,1.3); scene.add(swArrow); }
+        const dx=ch.x-jn.node.x, dz=ch.z-jn.node.z, l=Math.hypot(dx,dz)||1; swArrow.position.set(jn.node.x,th(jn.node.x,jn.node.z)+3.2,jn.node.z); swArrow.setDirection(new THREE.Vector3(dx/l,0,dz/l)); swArrow.setColor(tr.pref==='S'?0x2ecc71:0xffd24a); show=true; } }
+    else t='Стрелка: '+sel+' (развилок впереди нет)';
+  }
+  if(swArrow) swArrow.visible=show;
+  if(el.textContent!==t) el.textContent=t;
+}
 /* =====================  ПАРАМЕТРЫ ДОРОГ  ===================== */
 const ROAD={motorway:[12,6],motorway_link:[7,5],trunk:[11,6],trunk_link:[7,5],primary:[10,5],primary_link:[6.5,4],secondary:[9,4],secondary_link:[6,3],tertiary:[8,3],tertiary_link:[6,3],unclassified:[6.5,2],residential:[6.5,2],living_street:[5.5,2],service:[4,1],pedestrian:[4,0],track:[3.5,0],footway:[2,0],path:[1.8,0],cycleway:[2,0]};
 function roadColor(h,r){ if(r>=2) return hexc(0x3c3e42); if(r===1) return hexc(0x4d4f52); if(h==='cycleway') return hexc(0x99604f); if(h==='track'||h==='path') return hexc(0x8e7b5a); return hexc(0xa9a69c); }
@@ -1226,6 +1408,7 @@ function clearTileContent(t){
   if(t.signSlots){ for(const sl of t.signSlots) signFree.push(sl); } t.signSlots=[];
   gRemove(roadGrid,t.rc,t.key); gRemove(bldGrid,t.bc,t.key); gRemove(nameGrid,t.nc,t.key);
   t.rc=new Set(); t.bc=new Set(); t.nc=new Set(); t.stops=[];
+  if(t.railEdges){ for(const e of t.railEdges) rgDel(e[0],e[1]); } t.railEdges=[];
 }
 function removeTile(t){ clearTileContent(t); tiles.delete(t.key); }
 function ensureTiles(){
@@ -1839,6 +2022,7 @@ function buildTile(T,data){
     }
   }
   // --- железная дорога и трамвай ---
+  regRailAll(T,railWays);
   for(const r of railWays){
     const tram=r.tg.railway==='tram'||r.tg.railway==='light_rail', br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,7):groundLine(r.pts,12);
     for(const run of runsOf(P)){
@@ -2108,7 +2292,7 @@ function teleport(la,lo){
   gen++; for(const ac of inflight) try{ac.abort();}catch(e){} inflight.clear();
   for(const t of [...tiles.values()]) removeTile(t);
   buildQ.length=0; rawCache.clear(); enrCache.clear(); roadGrid.clear(); bldGrid.clear(); nameGrid.clear(); ownedAreas.clear(); demBase=null; demInit=null; demFailed=false; nodeMemo.clear(); terrMinH=0; rev.set=false; rev.road=rev.district=rev.city='';
-  setOrigin(la,lo); bus.x=bus.z=0; bus.y=0; bus.pitch=0; bus.roll=0; bus.h=0; bus.v=0; bus.steer=0; needSnap=true; snapCam=true;
+  setOrigin(la,lo); bus.x=bus.z=0; bus.y=0; bus.pitch=0; bus.roll=0; bus.h=0; bus.v=0; bus.steer=0; needSnap=true; snapCam=true; RG.hash.clear(); tr.on=false; tr.want=false; if(VK==='tram') setTimeout(openSpawn,1500);
   try{ history.replaceState(null,'','#'+la.toFixed(5)+','+lo.toFixed(5)); }catch(e){}
   setStatus('Телепорт: '+la.toFixed(5)+', '+lo.toFixed(5)); pump();
 }
@@ -2206,7 +2390,7 @@ $('showtouch').addEventListener('change',e=>showTouch(e.target.checked));
 /* =====================  ФИЗИКА  ===================== */
 function hitsBuilding(x,z,h){ const c=Math.cos(h),s=Math.sin(h); for(const q of CPTS){ if(pointInBuilding(x+q[0]*c+q[1]*s,z-q[0]*s+q[1]*c)) return true; } return false; }
 function physics(dt){
-  const FREE=camMode===3;
+  const FREE=camMode===3; try{ tramMaint(dt); }catch(e){ tr.on=false; }
   const thr=FREE?0:((keys.KeyW||keys.ArrowUp||touch.gas)?1:0)-((keys.KeyS||keys.ArrowDown||touch.brake)?1:0);
   const st=FREE?0:((keys.KeyA||keys.ArrowLeft||touch.left)?1:0)-((keys.KeyD||keys.ArrowRight||touch.right)?1:0);
   const hand=FREE||keys.Space||touch.hand, boost=!FREE&&(keys.ShiftLeft||keys.ShiftRight||touch.turbo);
@@ -2220,9 +2404,12 @@ function physics(dt){
   if(v>vmax) v-=12*dt;
   const maxSt=0.62/(1+Math.abs(v)/9)+0.06, d=bus.steer*maxSt;
   const ox=bus.x,oz=bus.z,oh=bus.h;
-  bus.h+=v/VV.wb*Math.tan(d)*dt;
-  bus.x+=Math.sin(bus.h)*v*dt; bus.z+=Math.cos(bus.h)*v*dt;
-  if($('coll').checked&&bus.y-th(bus.x,bus.z)<2.5&&Math.abs(v)>0.05&&hitsBuilding(bus.x,bus.z,bus.h)&&!hitsBuilding(ox,oz,oh)){ bus.x=ox;bus.z=oz;bus.h=oh; v=-v*0.25; }
+  if(VK==='tram'&&tr.on){ try{ v=tramStep(dt,v); }catch(e){ tr.on=false; v=0; setStatus('Ошибка трамвая: '+(e&&e.message)); } }
+  else{
+    bus.h+=v/VV.wb*Math.tan(d)*dt;
+    bus.x+=Math.sin(bus.h)*v*dt; bus.z+=Math.cos(bus.h)*v*dt;
+    if($('coll').checked&&bus.y-th(bus.x,bus.z)<2.5&&Math.abs(v)>0.05&&hitsBuilding(bus.x,bus.z,bus.h)&&!hitsBuilding(ox,oz,oh)){ bus.x=ox;bus.z=oz;bus.h=oh; v=-v*0.25; }
+  }
   bus.v=v;
   const sh=Math.sin(bus.h),ch=Math.cos(bus.h), lx=ch,lz=-sh;   // lx,lz — вектор «влево» автобуса
   const g0=groundAt(bus.x,bus.z,bus.y);
@@ -2230,8 +2417,8 @@ function physics(dt){
   const gl=groundAt(bus.x+lx*HX,bus.z+lz*HX,g0), gr=groundAt(bus.x-lx*HX,bus.z-lz*HX,g0);
   const want=Math.max(g0,(gf+gb)/2,(gl+gr)/2);   // коробка не врезается в склон ни носом, ни кормой
   bus.y+=(want-bus.y)*Math.min(1,14*dt);
-  const tp=Math.max(-0.5,Math.min(0.5,Math.atan2(gf-gb,2*GF))), tr=Math.max(-0.35,Math.min(0.35,Math.atan2(gl-gr,2*HX)));
-  bus.pitch+=(tp-bus.pitch)*Math.min(1,9*dt); bus.roll+=(tr-bus.roll)*Math.min(1,9*dt);
+  const tp=Math.max(-0.5,Math.min(0.5,Math.atan2(gf-gb,2*GF))), trl=Math.max(-0.35,Math.min(0.35,Math.atan2(gl-gr,2*HX)));
+  bus.pitch+=(tp-bus.pitch)*Math.min(1,9*dt); bus.roll+=(trl-bus.roll)*Math.min(1,9*dt);
   bus.v-=9.81*Math.sin(bus.pitch)*0.7*dt;   // подъём тормозит, спуск разгоняет
 }
 
@@ -2266,7 +2453,7 @@ let tTod=0;
 function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),0.05); t0+=dt;
-  physics(dt);
+  try{ physics(dt); }catch(e){ setStatus('Ошибка физики: '+(e&&e.message)); }
   busGroup.position.set(bus.x,0.05+bus.y,bus.z); busGroup.rotation.y=bus.h; busGroup.rotation.x=-bus.pitch; busGroup.rotation.z=bus.roll;
   ground.position.set(bus.x,terrMinH-1,bus.z); groundTex.offset.x=((bus.x-2500)/10)%1; groundTex.offset.y=((-bus.z-2500)/10)%1;
   if(todSpeed>0){ tod=(tod+dt*todSpeed/3600)%24; }
@@ -2291,7 +2478,7 @@ function animate(){
   }
   tPump+=dt; if(tPump>0.5){ tPump=0; pump(); }
   tHud+=dt; if(tHud>0.2){
-    tHud=0;
+    tHud=0; swHud();
     let pending=buildQ.length; for(const t of tiles.values()) if(t.state==='queued'||t.state==='loading') pending++;
     let failed=0; for(const t of tiles.values()) if(t.state==='failed') failed++;
     if(pending>0) setStatus('Загрузка карты… тайлов в очереди: '+pending);
@@ -2426,7 +2613,7 @@ function toggleUI(){ const h=document.body.classList.toggle('nui'); if(rt.segs.l
 $('hideui').addEventListener('click',()=>{ toggleUI(); $('hideui').blur(); });
 addEventListener('keydown',e=>{ if(e.code==='KeyH'&&!(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) toggleUI(); });
 /* =====================  СТАРТ  ===================== */
-window.__dbg={setWinter:v=>{WINTER=v;},signSlots:()=>signFree.length,setVehicle,parseCamTxt,templateObj,templateReadme,VEHS,drawMini,rt,demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
+window.__dbg={swHud,physics,spawnAt,openSpawn,drawSpawn,sp,tr,RG,railSnap,tramStep,tramMaint,pickNext,turnAround,bus,keys,setWinter:v=>{WINTER=v;},signSlots:()=>signFree.length,setVehicle,parseCamTxt,templateObj,templateReadme,VEHS,drawMini,rt,demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
 {
   restoreSettings(); if(!window.__vehRestored) restoreBus();
   let start=null; const h=location.hash.replace('#',''); if(h){ start=parseCoords(h); }
