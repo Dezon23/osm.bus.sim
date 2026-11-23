@@ -165,6 +165,12 @@ body.nui #panel,body.nui #where,body.nui #hud,body.nui #mmap{display:none!import
       <label><input type="checkbox" id="showtouch"> Сенсорные кнопки</label>
     </div>
 
+    <h2>Онлайн (бета)</h2>
+    <div class="row"><input type="text" id="mpnick" maxlength="16" placeholder="Ник" value="Игрок" autocomplete="off" spellcheck="false" style="flex:1;min-width:0"></div>
+    <div class="row"><button id="mphost">🌐 Создать комнату</button><input type="text" id="mpcode" maxlength="8" placeholder="Код" autocomplete="off" spellcheck="false" style="width:90px;text-transform:uppercase"><button id="mpjoin">Войти</button></div>
+    <div class="row"><button id="mpgather" style="display:none">📍 Собрать всех у меня</button><button id="mpleave" style="display:none">Выйти из комнаты</button></div>
+    <div id="mpinfo" class="small">Хост создаёт комнату и сообщает код. Игроки вводят код и телепортируются к хосту. Время суток и месяц задаёт хост. Соединение напрямую (WebRTC) через брокер PeerJS.</div>
+
     <h2>Управление</h2>
     <div class="small">W/S или ↑/↓ — газ/тормоз/назад · A/D или ←/→ — руль · Пробел — ручник · Shift — турбо · C — камера · N — день/ночь · мышь/палец — вращать камеру, колесо/щипок — зум.</div>
     <div class="small" style="margin-top:6px">Данные карты © участники OpenStreetMap (векторные тайлы OpenFreeMap / OpenMapTiles, Overpass API).</div>
@@ -595,6 +601,23 @@ function makeFacadeAlt(glow){
   }
   return texFrom(c,8);
 }
+function makeFacadeShop(glow){
+  const W=512,H=256,c=cv(W,H),x=c.getContext('2d');
+  if(glow){ x.fillStyle='#000'; x.fillRect(0,0,W,H); x.fillStyle='#ffe2a8'; x.fillRect(10,44,W-20,150); x.fillStyle='#000'; for(let i=64;i<W;i+=64) x.fillRect(i-2,44,4,150); }
+  else{
+    x.fillStyle='#d9d6cc'; x.fillRect(0,0,W,H);
+    for(let i=0;i<1800;i++){ const v=190+Math.random()*50|0; x.fillStyle='rgba('+v+','+v+','+(v-8)+',0.3)'; x.fillRect(Math.random()*W,Math.random()*H,1+Math.random()*3,1+Math.random()*2); }
+    x.fillStyle='#b8b5ab'; x.fillRect(0,0,W,22); x.fillStyle='#f1efe8'; x.fillRect(0,22,W,4); x.fillStyle='#a9a69c'; x.fillRect(0,H-26,W,26);
+    const g=x.createLinearGradient(0,44,0,194); g.addColorStop(0,'#9fc4dc'); g.addColorStop(0.45,'#4f7794'); g.addColorStop(1,'#243747');
+    x.fillStyle='#2b2f33'; x.fillRect(6,40,W-12,158); x.fillStyle=g; x.fillRect(10,44,W-20,150);
+    x.fillStyle='rgba(255,255,255,0.18)'; for(let i=0;i<W;i+=64){ x.beginPath(); x.moveTo(i+10,44); x.lineTo(i+34,44); x.lineTo(i+10,194); x.lineTo(i-14,194); x.closePath(); x.fill(); }
+    x.fillStyle='#2b2f33'; for(let i=64;i<W;i+=64) x.fillRect(i-2,44,4,150);
+    x.fillStyle='rgba(0,0,0,0.25)'; x.fillRect(10,160,W-20,4);
+  }
+  return texFrom(c,8);
+}
+const matBldShop=new THREE.MeshLambertMaterial({vertexColors:true,map:makeFacadeShop(false),emissive:0xffffff,emissiveMap:makeFacadeShop(true),emissiveIntensity:0});
+matBldShop.onBeforeCompile=sh=>matBld.onBeforeCompile(sh);
 const matBldAlt=new THREE.MeshLambertMaterial({vertexColors:true,map:makeFacadeAlt(false),emissive:0xffffff,emissiveMap:makeFacadeAlt(true),emissiveIntensity:0});
 matBldAlt.onBeforeCompile=matBld.onBeforeCompile;
 /* атлас вывесок: 8×32 ячеек по 256×64 */
@@ -812,7 +835,7 @@ function applyTime(){
   const tw=Math.exp(-Math.pow(sp.E*57.2958/8,2))*0.6;
   skyC.copy(C_SKY_NIGHT).lerp(C_SKY_DAY,kd).lerp(C_SKY_TW,tw); scene.background.copy(skyC); scene.fog.color.copy(skyC);
   const dark=sinE<0.07; if(dark!==isDark){ isDark=dark; headL.visible=headR.visible=dark; }
-  const nf=1-sstep(-0.10,0.06,sinE); matBld.emissiveIntensity=nf*1.15; matBldAlt.emissiveIntensity=nf*0.95; matSign.emissiveIntensity=0.12+0.78*nf; matLampHead.emissiveIntensity=nf*1.7; matGlow.opacity=nf*0.8; matGlow.visible=nf>0.01; starMat.opacity=1-sstep(-0.16,-0.02,sinE); sunElDeg=sp.E*57.2958;
+  const nf=1-sstep(-0.10,0.06,sinE); matBld.emissiveIntensity=nf*1.15; matBldAlt.emissiveIntensity=nf*0.95; matBldShop.emissiveIntensity=nf*1.0; matSign.emissiveIntensity=0.12+0.78*nf; matLampHead.emissiveIntensity=nf*1.7; matGlow.opacity=nf*0.8; matGlow.visible=nf>0.01; starMat.opacity=1-sstep(-0.16,-0.02,sinE); sunElDeg=sp.E*57.2958;
   sunDisc.visible=sinE>-0.04; sunDisc.material.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.4,sinE));
   sun.castShadow=shadowsOn&&sinE>0.04;
 }
@@ -1705,7 +1728,8 @@ function enrQuery(t){
 async function enrichTile(t,g){
   enrActive++; t.enrTried=true;
   try{
-    const d=await fetchOverpass(t,g,enrQuery,{to:20000,quiet:true});
+    const d=await raceOverpass(enrQuery(t),22000,false,true);
+    if(!(d&&d.elements)&&g===gen){ t.enrFail=(t.enrFail||0)+1; if(t.enrFail<4){ t.enrTried=false; t.enrAt=performance.now()+8000*t.enrFail; } }
     if(d&&d.elements&&g===gen&&tiles.get(t.key)===t){
       t.enr=d.elements; enrCache.set(t.key,t.enr);
       const raw=rawCache.get(t.key); if(t.state==='built'&&raw) buildQ.push({t,raw,g});
@@ -1742,9 +1766,9 @@ function pump(){
   for(const t of tiles.values()){ if(t.state==='loading') active++; else if(t.state==='queued'||(t.state==='failed'&&now>t.retryAt)) cand.push(t); }
   cand.sort((a,b)=>a.d-b.d);
   for(const t of cand){ if(active>=3) break; active++; loadTile(t); }
-  if($('enr').checked&&enrActive<1&&$('src').value!=='overpass'){
-    let best=null; for(const t of tiles.values()) if(t.state==='built'&&t.src==='vector'&&!t.enrTried&&(!best||t.d<best.d)) best=t;
-    if(best) enrichTile(best,gen);
+  if($('enr').checked&&enrActive<2&&$('src').value!=='overpass'){
+    const nowE=performance.now(); let best=null; for(const t of tiles.values()) if(t.state==='built'&&t.src==='vector'&&!t.enrTried&&!(t.enrAt>nowE)&&!t.enrBusy&&(!best||t.d<best.d)) best=t;
+    if(best){ best.enrBusy=true; enrichTile(best,gen).finally(()=>{ best.enrBusy=false; }); }
   }
 }
 
@@ -1925,7 +1949,7 @@ function buildTile(T,data){
   const els=data.elements||[];
   const x0=T.i*S,z0=T.j*S,x1=x0+S,z1=z0+S;
   const inT=(x,z)=>x>=x0&&x<x1&&z>=z0&&z<z1;
-  const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), ba=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true), sgm=new MB(true), am=new MB(true), tsm=new MB(true);
+  const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), ba=new MB(true), shp=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true), sgm=new MB(true), am=new MB(true), tsm=new MB(true);
   const bRec=[];
   const roadWays=[],railWays=[],nameWays=[],areaWays=[],bldWays=[],waterLines=[],treeNodes=[],sigNodes=[],stopNodes=[],fenceWays=[],poiNodes=[],spPts=[],tramStopNodes=[];
   T.signSlots=T.signSlots||[]; T.signsTried=T.d<=S*1.6;
@@ -2120,6 +2144,7 @@ function buildTile(T,data){
     }
   }
   // --- здания ---
+  const minx0=p=>{ let m=1e9; for(const q of p) if(q[0]<m) m=q[0]; return m; };
   for(const b of bldWays){
     let p=cleanPts(b.pts); if(p.length>1&&p[0][0]===p[p.length-1][0]&&p[0][1]===p[p.length-1][1]) p.pop();
     if(p.length<3||p.length>400) continue;
@@ -2137,6 +2162,10 @@ function buildTile(T,data){
     let bTg=b.tg, special=SPECIAL_B.has(bTg.building)||bTg.amenity==='place_of_worship'||SPECIAL_H.has(bTg.historic)||SPECIAL_M.has(bTg.man_made), worship=bTg.amenity==='place_of_worship'||WORSHIP_B.has(bTg.building);
     if(!special&&spPts.length){ for(const q of spPts){ if(q.p[0]>=0||true){ if(pip(q.p[0],q.p[1],p)){ special=true; if(q.worship) worship=true; break; } } } }
     let bmb=bl;
+    let shopB=!special&&(bTg.building==='mall'||bTg.shop==='mall'||bTg.shop==='department_store'||(bTg.building==='retail'&&Math.abs(A)>=3000));
+    if(!special&&!shopB&&poiNodes.length){ let ns=0; for(const q of poiNodes){ const g=q.tg||{}, c=g.cls||'', sb=g.sub||''; const isShop=!!g.shop||c==='shop'; if(!isShop&&c!=='mall'&&c!=='department_store') continue; if(!pip(q.p[0],q.p[1],p)) continue; if(g.shop==='mall'||g.shop==='department_store'||sb==='mall'||sb==='department_store'||c==='mall'||c==='department_store'){ shopB=true; break; } ns++; }
+      void ns; }
+    if(shopB){ bmb=shp; if(!bTg['building:colour']) wc=[[.86,.84,.78],[.80,.82,.84],[.88,.80,.70],[.78,.74,.70]][Math.floor(rng()*4)]; }
     if(special){ bmb=ba; if(worship){ const L=[[.94,.92,.86],[.96,.90,.76],[.90,.93,.97],[.95,.86,.80]]; if(!bTg['building:colour']) wc=L[Math.floor(rng()*L.length)]; rc=[[.28,.50,.38],[.22,.34,.52],[.55,.22,.20],[.80,.66,.25]][Math.floor(rng()*4)]; } else { if(!bTg['building:colour']) wc=[.88,.86,.80]; rc=[.45,.43,.40]; } }
     if(WINTER) rc=snowMix(rc,0.82);
     let acc=0; const uoff=(Math.imul((b.id|0)^0x9e3779b9,2654435761)>>>0)%211, voff=(Math.imul((b.id|0)+7,40503)>>>0)%37;
@@ -2344,7 +2373,7 @@ function buildTile(T,data){
   }
   // --- сборка ---
   const g=new THREE.Group();
-  for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[ba.mesh(matBldAlt),1],[sgm.mesh(matSign),0],[tsm.mesh(matTramSign),0],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0],[am.mesh(matArea),0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
+  for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[ba.mesh(matBldAlt),1],[shp.mesh(matBldShop),1],[sgm.mesh(matSign),0],[tsm.mesh(matTramSign),0],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0],[am.mesh(matArea),0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
   T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; T.areaMesh=g.children.find(m=>m.material===matArea)||null; T.tsMesh=g.children.find(m=>m.material===matTramSign)||null; if(T.tsMesh){ T.tsMesh.renderOrder=6; T.tsMesh.visible=(VK==='tram'); } if(satEnabled&&terrMesh&&T.d<=S*SATR){ T.satT=performance.now(); loadSat(T,terrMesh); }
 }
 
@@ -2543,6 +2572,7 @@ function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),0.05); t0+=dt;
   try{ physics(dt); }catch(e){ setStatus('Ошибка физики: '+(e&&e.message)); }
+  if(MP.players.size) try{ mpUpdate(dt); }catch(e){}
   busGroup.position.set(bus.x,0.05+bus.y+(VK==='tram'?0.3:0),bus.z); busGroup.rotation.y=bus.h; busGroup.rotation.x=-bus.pitch; busGroup.rotation.z=bus.roll;
   ground.position.set(bus.x,terrMinH-1,bus.z); groundTex.offset.x=((bus.x-2500)/10)%1; groundTex.offset.y=((-bus.z-2500)/10)%1;
   if(todSpeed>0){ tod=(tod+dt*todSpeed/3600)%24; }
@@ -2598,7 +2628,7 @@ $('rscale').addEventListener('change',()=>{ PRS=+$('rscale').value||0; applyPR()
 $('shdist').addEventListener('change',()=>{ SHD=+$('shdist').value||90; applyShadowQ(); $('shdist').blur(); });
 $('expo').addEventListener('input',e=>{ EXPO=+e.target.value; });
 $('camfov').addEventListener('input',e=>{ camera.fov=+e.target.value; camera.updateProjectionMatrix(); $('fovl').textContent=Math.round(camera.fov)+'°'; });
-const SKEY='osmbus.settings.v1', PSKIP=new Set(['tod','file','modelfile','coord','preset','freecam','route']), NOEV=new Set(['src','sgurl']);
+const SKEY='osmbus.settings.v1', PSKIP=new Set(['mpcode','tod','file','modelfile','coord','preset','freecam','route']), NOEV=new Set(['src','sgurl']);
 const keyOf=e=>e.id||(e.dataset&&e.dataset.fx?'fx.'+e.dataset.fx:null);
 const persistEls=()=>[...document.querySelectorAll('#panel input,#panel select')].filter(e=>{ const k=keyOf(e); return k&&!PSKIP.has(k)&&e.type!=='file'; });
 let saveT=0;
@@ -2615,22 +2645,114 @@ function restoreSettings(){
 }
 $('panel').addEventListener('change',saveSettings); $('panel').addEventListener('input',saveSettings);
 
+
+/* =====================  ОНЛАЙН (WebRTC / PeerJS)  ===================== */
+const MP={peer:null,host:false,code:'',conns:new Map(),hostConn:null,players:new Map(),myId:'',timer:0,tTime:0};
+const mpEl=$('mpinfo'), mpSay=t=>{ mpEl.textContent=t; };
+const MPCH='ABCDEFGHJKMNPQRSTUVWXYZ23456789', mpNewCode=()=>Array.from({length:6},()=>MPCH[(Math.random()*MPCH.length)|0]).join('');
+function mpLoadLib(){ return new Promise((res,rej)=>{ if(window.Peer) return res(); const urls=['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
+  let i=0; const next=()=>{ if(i>=urls.length) return rej(new Error('не загрузилась библиотека PeerJS')); const sc=document.createElement('script'); sc.src=urls[i++]; sc.onload=()=>window.Peer?res():next(); sc.onerror=next; document.head.appendChild(sc); }; next(); }); }
+const mpNick=()=>($('mpnick').value||'Игрок').trim().slice(0,16)||'Игрок';
+function mpUI(on){ $('mphost').disabled=$('mpjoin').disabled=on; $('mpleave').style.display=on?'':'none'; $('mpgather').style.display=(on&&MP.host)?'':'none'; }
+function mpNameSprite(nm){ const c=document.createElement('canvas'); c.width=256; c.height=64; const x=c.getContext('2d'); x.fillStyle='rgba(0,0,0,0.55)'; x.fillRect(0,8,256,48); x.font='bold 30px sans-serif'; x.textAlign='center'; x.textBaseline='middle'; x.fillStyle='#fff'; x.fillText(nm,128,33);
+  const t=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthWrite:false})); sp.scale.set(4,1,1); return sp; }
+function mpMakeMesh(id,nick,veh){
+  const V=VEHS[veh]||VEHS.bus, g=new THREE.Group(); let hh=0; for(let i=0;i<nick.length;i++) hh=(hh*31+nick.charCodeAt(i))|0; const col=new THREE.Color().setHSL(((hh>>>0)%360)/360,0.6,0.5);
+  const body=new THREE.Mesh(new THREE.BoxGeometry(V.W,V.H*0.8,V.L),new THREE.MeshLambertMaterial({color:col})); body.position.y=V.H*0.4+0.2; body.castShadow=true; g.add(body);
+  const gl=new THREE.Mesh(new THREE.BoxGeometry(V.W*1.01,V.H*0.3,V.L*0.04),new THREE.MeshLambertMaterial({color:0x1d2733})); gl.position.set(0,V.H*0.55+0.2,V.L/2); g.add(gl);
+  const sp=mpNameSprite(nick); sp.position.y=V.H+1.6; g.add(sp); scene.add(g);
+  return {id,nick,veh,g,sp,cur:null,tg:null};
+}
+function mpRemove(id){ const p=MP.players.get(id); if(!p) return; scene.remove(p.g); p.g.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } }); MP.players.delete(id); mpCount(); }
+function mpCount(){ if(MP.peer) mpSay((MP.host?'Вы хост · код комнаты: '+MP.code:'Вы в комнате '+MP.code)+' · игроков онлайн (кроме вас): '+MP.players.size+(MP.players.size?' — '+[...MP.players.values()].map(p=>p.nick).join(', '):'')); }
+function mpSend(c,m){ try{ if(c&&c.open) c.send(m); }catch(e){} }
+function mpApplyState(m){
+  let p=MP.players.get(m.id);
+  if(!p){ p=mpMakeMesh(m.id,m.nick||'Игрок',m.veh); MP.players.set(m.id,p); mpCount(); }
+  else if(p.veh!==m.veh||p.nick!==m.nick){ const old=p; scene.remove(old.g); const n=mpMakeMesh(m.id,m.nick||'Игрок',m.veh); n.cur=old.cur; MP.players.set(m.id,n); p=n; }
+  const xz=proj(m.la,m.lo); p.tg={x:xz[0],z:xz[1],h:m.h,dy:m.dy,pitch:m.pi||0,roll:m.ro||0};
+  if(!p.cur) p.cur={x:p.tg.x,z:p.tg.z,h:p.tg.h,y:th(p.tg.x,p.tg.z)+p.tg.dy,pitch:0,roll:0};
+}
+function mpUpdate(dt){
+  const k=1-Math.exp(-dt*12);
+  for(const p of MP.players.values()){ if(!p.tg) continue; const c=p.cur, t=p.tg;
+    if(Math.hypot(t.x-c.x,t.z-c.z)>80){ c.x=t.x; c.z=t.z; } c.x+=(t.x-c.x)*k; c.z+=(t.z-c.z)*k;
+    let dh=t.h-c.h; dh=Math.atan2(Math.sin(dh),Math.cos(dh)); c.h+=dh*k; const ty=th(t.x,t.z)+t.dy; c.y+=(ty-c.y)*k; c.pitch+=(t.pitch-c.pitch)*k; c.roll+=(t.roll-c.roll)*k;
+    p.g.position.set(c.x,c.y+0.05,c.z); p.g.rotation.order='YXZ'; p.g.rotation.set(-c.pitch,c.h,c.roll);
+    p.sp.visible=Math.hypot(c.x-bus.x,c.z-bus.z)<400; }
+}
+function mpMyState(){ const ll=unproj(bus.x,bus.z); return {t:'st',id:MP.myId,nick:mpNick(),veh:VK,la:+ll[0].toFixed(7),lo:+ll[1].toFixed(7),h:+bus.h.toFixed(3),dy:+(bus.y-th(bus.x,bus.z)).toFixed(2),pi:+(bus.pitch||0).toFixed(3),ro:+(bus.roll||0).toFixed(3)}; }
+function mpTimeMsg(){ return {t:'time',tod,tspd:todSpeed,mon:+$('mon').value}; }
+function mpApplyTime(m){ tod=m.tod; $('tod').value=tod; if(todSpeed!==m.tspd){ todSpeed=m.tspd; const o=[...$('tspd').options].find(x=>+x.value===m.tspd); if(o) $('tspd').value=o.value; }
+  if(+$('mon').value!==m.mon){ $('mon').value=m.mon; $('mon').dispatchEvent(new Event('change',{bubbles:true})); } }
+function mpHandle(m,from){
+  if(!m||!m.t) return;
+  if(m.t==='st'){ if(MP.host){ m.id=from.peer; for(const [id,c] of MP.conns) if(id!==from.peer) mpSend(c,m); } if(m.id===MP.myId) return; mpApplyState(m); }
+  else if(m.t==='world'&&!MP.host){ teleport(m.la,m.lo); mpApplyTime(m); setStatus('Вы у хоста'); }
+  else if(m.t==='time'&&!MP.host) mpApplyTime(m);
+  else if(m.t==='left'){ mpRemove(m.id); }
+}
+function mpWorldMsg(){ const ll=unproj(bus.x,bus.z); const t=mpTimeMsg(); return Object.assign({t:'world',la:ll[0],lo:ll[1]},t); }
+function mpStart(){
+  clearInterval(MP.timer); let n=0;
+  MP.timer=setInterval(()=>{ if(!MP.peer) return; const st=mpMyState(); if(MP.host){ for(const c of MP.conns.values()) mpSend(c,st); if(++n%30===0){ const tm=mpTimeMsg(); for(const c of MP.conns.values()) mpSend(c,tm); } } else mpSend(MP.hostConn,st); },100);
+}
+function mpLeave(msg){
+  clearInterval(MP.timer); try{ if(MP.peer) MP.peer.destroy(); }catch(e){}
+  MP.peer=null; MP.hostConn=null; MP.conns.clear(); for(const id of [...MP.players.keys()]) mpRemove(id); MP.host=false; MP.code=''; mpUI(false); mpSay(msg||'Вы вышли из комнаты.');
+}
+async function mpHost(){
+  mpUI(true); mpSay('Создаю комнату…');
+  try{ await mpLoadLib(); }catch(e){ mpUI(false); return mpSay('Онлайн недоступен: '+e.message); }
+  for(let tryN=0;tryN<4;tryN++){
+    const code=mpNewCode();
+    const ok=await new Promise(res=>{ const peer=new Peer('osmbus3d-'+code); let fin=false; const done=v=>{ if(!fin){ fin=true; res(v?peer:null); } };
+      peer.on('open',()=>done(true)); peer.on('error',e=>{ if(!fin) done(false); else mpSay('Ошибка соединения: '+(e&&e.type||e)); }); setTimeout(()=>done(false),9000); });
+    if(!ok) continue;
+    MP.peer=ok; MP.host=true; MP.code=code; MP.myId=ok.id;
+    ok.on('connection',c=>{ c.on('open',()=>{ MP.conns.set(c.peer,c); mpSend(c,mpWorldMsg()); mpCount(); });
+      c.on('data',m=>mpHandle(m,c));
+      const gone=()=>{ MP.conns.delete(c.peer); mpRemove(c.peer); for(const o of MP.conns.values()) mpSend(o,{t:'left',id:c.peer}); mpCount(); };
+      c.on('close',gone); c.on('error',gone); });
+    ok.on('disconnected',()=>{ try{ ok.reconnect(); }catch(e){} });
+    mpUI(true); mpCount(); mpStart(); return;
+  }
+  mpLeave('Не удалось создать комнату (брокер PeerJS недоступен).');
+}
+async function mpJoin(){
+  const code=($('mpcode').value||'').trim().toUpperCase(); if(code.length<4) return mpSay('Введите код комнаты.');
+  mpUI(true); mpSay('Подключаюсь…');
+  try{ await mpLoadLib(); }catch(e){ mpUI(false); return mpSay('Онлайн недоступен: '+e.message); }
+  const peer=new Peer(); MP.peer=peer; MP.host=false; MP.code=code;
+  let opened=false; const fail=t=>{ if(!opened) mpLeave(t); };
+  peer.on('error',e=>{ if(!opened) fail(e&&e.type==='peer-unavailable'?'Комната с таким кодом не найдена.':'Ошибка: '+(e&&e.type||e)); });
+  peer.on('open',id=>{ MP.myId=id; const c=peer.connect('osmbus3d-'+code,{reliable:true}); MP.hostConn=c;
+    setTimeout(()=>fail('Хост не отвечает.'),12000);
+    c.on('open',()=>{ opened=true; mpUI(true); mpCount(); mpStart(); });
+    c.on('data',m=>mpHandle(m,c)); c.on('close',()=>mpLeave('Хост закрыл комнату.')); c.on('error',()=>fail('Ошибка соединения.')); });
+}
+$('mphost').addEventListener('click',()=>{ mpHost(); $('mphost').blur(); });
+$('mpjoin').addEventListener('click',()=>{ mpJoin(); $('mpjoin').blur(); });
+$('mpleave').addEventListener('click',()=>{ mpLeave(); $('mpleave').blur(); });
+$('mpgather').addEventListener('click',()=>{ const m=mpWorldMsg(); for(const c of MP.conns.values()) mpSend(c,m); $('mpgather').blur(); });
+['mpnick','mpcode'].forEach(id=>{ $(id).addEventListener('keydown',e=>e.stopPropagation()); $(id).addEventListener('keyup',e=>e.stopPropagation()); });
+
 /* =====================  МАРШРУТЫ + МИНИ-КАРТА  ===================== */
 const rt={segs:[],stops:[],full:false,label:''}, mm=$('mmap'), mmx=mm.getContext('2d');
 const RT_ICON={bus:'🚌',trolleybus:'🚎',tram:'🚋',subway:'🚇',light_rail:'🚈',share_taxi:'🚐',minibus:'🚐'};
 function rtLabel(t){ const ref=t.ref||'', nm=t.name||'', fr=t.from||'', to=t.to||''; let d=(fr||to)?(fr+' → '+to):nm.replace(/^[^:]*:\s*/,''); return (RT_ICON[t.route]||'🚌')+' '+(ref?ref+' · ':'')+(d||nm||('#'+(t.id||''))); }
 const rtCache=new Map(), rtErr=[];
-async function raceOverpass(q,ms,needData){
-  const key=q; if(rtCache.has(key)) return rtCache.get(key);
-  const acs=[]; let done=false; rtErr.length=0;
+async function raceOverpass(q,ms,needData,nocache){
+  const key=q; if(!nocache&&rtCache.has(key)) return rtCache.get(key);
+  const acs=[]; let done=false; if(!nocache) rtErr.length=0;
   const one=async url=>{
     const ac=new AbortController(); acs.push(ac); const tm=setTimeout(()=>ac.abort(),ms);
     try{ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ac.signal}); if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json(); if(d.remark&&/error|timed out|memory/i.test(d.remark)&&!(d.elements&&d.elements.length)) throw new Error('remark'); if(needData&&!(d.elements&&d.elements.length)) throw new Error('empty'); return d; }
-    catch(e){ if(!done) rtErr.push(url.replace(/^https:\/\/([^\/]+).*/,'$1')+': '+(e&&e.name==='AbortError'?'таймаут':String(e&&e.message||e))); throw e; }
+    catch(e){ if(!done&&!nocache) rtErr.push(url.replace(/^https:\/\/([^\/]+).*/,'$1')+': '+(e&&e.name==='AbortError'?'таймаут':String(e&&e.message||e))); throw e; }
     finally{ clearTimeout(tm); }
   };
-  try{ const d=await Promise.any(ENDPOINTS.filter(u=>!(needData&&/mail\.ru/.test(u))).map(one)); done=true; for(const ac of acs) try{ ac.abort(); }catch(e){} if(d){ rtCache.set(key,d); } return d; }
+  try{ const d=await Promise.any(ENDPOINTS.filter(u=>!(needData&&/mail\.ru/.test(u))).map(one)); done=true; for(const ac of acs) try{ ac.abort(); }catch(e){} if(d&&!nocache){ rtCache.set(key,d); } return d; }
   catch(e){ return null; }
 }
 async function findRoutes(){
