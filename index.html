@@ -149,6 +149,16 @@ body.nui #panel,body.nui #where,body.nui #hud,body.nui #mmap{display:none!import
       <label><input type="checkbox" data-fx="haze"> Атмосферная дымка</label>
       <label><input type="checkbox" data-fx="shq"> Тени высокого качества</label>
     </div>
+    <h2>Графика и плотность</h2>
+    <div class="row" style="flex-wrap:wrap;gap:6px 10px">
+      <label>Деревья <select id="treed" style="flex:none" title="Количество деревьев в парках, лесах, садах"><option value="0">нет</option><option value="0.5">×0.5</option><option value="1" selected>×1 (обычно)</option><option value="2">×2</option><option value="3">×3</option><option value="5">×5</option><option value="8">×8 (очень густо)</option></select></label>
+      <label>Фонари/заборы/сугробы <select id="objd" style="flex:none" title="Лимиты мелких объектов"><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option><option value="4">×4</option></select></label>
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:6px 10px">
+      <label>Разрешение <select id="rscale" style="flex:none" title="Масштаб рендера (чёткость)"><option value="0.5">×0.5 (быстро)</option><option value="0.75">×0.75</option><option value="1">×1</option><option value="1.5">×1.5</option><option value="0" selected>Авто</option><option value="2">×2</option><option value="3">×3 (супер)</option></select></label>
+      <label>Дальность теней <select id="shdist" style="flex:none"><option value="60">60 м</option><option value="90" selected>90 м</option><option value="140">140 м</option><option value="200">200 м</option></select></label>
+      <label>Яркость <input type="range" id="expo" min="0.6" max="1.6" step="0.05" value="1" style="width:90px"></label>
+    </div>
     <div class="row">
       <button id="night">🌙 День/ночь</button>
       <button id="cam">🎥 Камера</button>
@@ -344,20 +354,24 @@ function densify(pts,step){
 }
 // профиль моста: плавный подъём от земли до высоты H; на краях, обрезанных границей тайла, подъёма нет
 function groundLine(pts,step){ const P=densify(pts,step); for(const q of P) q.push(th(q[0],q[1])); return P; }
-function bridgeProfile(pts,cutEnds,Hfix,jh){
+function bridgeProfile(pts,cutEnds,Hfix,jh,cl){
   const P=densify(pts,6); let L=0; const sm=[0];
   for(let i=1;i<P.length;i++){ L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]); sm.push(L); }
-  const j0=jh&&jh[0]!=null?jh[0]:null, j1=jh&&jh[1]!=null?jh[1]:null, c0=!!(cutEnds&&cutEnds[0])||j0!==null, c1=!!(cutEnds&&cutEnds[1])||j1!==null;
-  const H=(c0||c1)?Hfix:Math.min(Hfix,0.05*L+0.5), nfree=(c0?0:1)+(c1?0:1), rl=Math.max(2,Math.min(H/0.08,L/Math.max(1,nfree)));
+  const j0=jh&&jh[0]!=null?jh[0]:null, j1=jh&&jh[1]!=null?jh[1]:null, c0=!!(cutEnds&&cutEnds[0])||(!cl&&j0!==null), c1=!!(cutEnds&&cutEnds[1])||(!cl&&j1!==null);
+  if(cl) Hfix=cl.H; const Lc=cl?Math.max(L,cl.smax-cl.smin):L;
+  const H=(c0||c1)?Hfix:Math.min(Hfix,0.05*Lc+0.5), nfree=(c0?0:1)+(c1?0:1), rl=Math.max(2,Math.min(H/0.08,Lc/Math.max(1,nfree)));
+  const sOf=q=>q[0]*cl.d[0]+q[1]*cl.d[1], fw=cl?(sOf(P[P.length-1])>=sOf(P[0])):true;
   const t0=th(P[0][0],P[0][1]), t1=th(P[P.length-1][0],P[P.length-1][1]);
-  for(let i=0;i<P.length;i++){ const d=Math.min(c0?1e9:sm[i],c1?1e9:L-sm[i]), r=Math.min(1,d/rl); let o=0; if(j0!==null&&j0>H){ const q=Math.min(1,sm[i]/40); o+=(j0-H)*(1-q*q*(3-2*q)); } if(j1!==null&&j1>H){ const q=Math.min(1,(L-sm[i])/40); o+=(j1-H)*(1-q*q*(3-2*q)); }
+  for(let i=0;i<P.length;i++){
+    let dS=sm[i], dE=L-sm[i]; if(cl){ const sv=sOf(P[i]); dS=fw?sv-cl.smin:cl.smax-sv; dE=fw?cl.smax-sv:sv-cl.smin; }
+    const d=Math.min(c0?1e9:dS,c1?1e9:dE), r=Math.min(1,d/rl); let o=0; if(j0!==null&&j0>H){ const q=Math.min(1,sm[i]/40); o+=(j0-H)*(1-q*q*(3-2*q)); } if(j1!==null&&j1>H){ const q=Math.min(1,(L-sm[i])/40); o+=(j1-H)*(1-q*q*(3-2*q)); }
     P[i]=[P[i][0],P[i][1],t0+(t1-t0)*sm[i]/(L||1)+H*r*r*(3-2*r)+o]; }
   return P;
 }
 const BRH={motorway:7,motorway_link:6.2,trunk:7,trunk_link:6.2,primary:6,primary_link:5.6,secondary:6,secondary_link:5.6,tertiary:5.6,tertiary_link:5.4,residential:5.2,unclassified:5.2,living_street:5,service:5,pedestrian:4.6,footway:4.6,cycleway:4.6,track:4.6,path:4.6};
 function vq(mb,a,b,c,d,col){ mb.quad(a,b,c,d,col); mb.quad(d,c,b,a,col); }
-function bridgeBody(mb,e,col,rail){
-  const L=e.L,R=e.R,T=0.9, dn=p=>[p[0],p[1]-T,p[2]], up=p=>[p[0],p[1]+0.9,p[2]];
+function bridgeBody(mb,e,col,rail,ph){
+  const L=e.L,R=e.R,T=0.9, PH=(ph==null?0.9:ph), dn=p=>[p[0],p[1]-T,p[2]], up=p=>[p[0],p[1]+PH,p[2]];
   const cl=q=>q[1]-th(q[0],q[2]);
   for(let i=0;i<L.length-1;i++){
     if(Math.min(cl(L[i]),cl(L[i+1]),cl(R[i]),cl(R[i+1]))<1.25) continue;   // низкие участки съездов — без боковых стенок и днища
@@ -373,6 +387,29 @@ function bridgePillars(mb,pts,w,id,inT){
     for(;t<len;t+=24){
       const f=t/len, x=a[0]+dx*f, z=a[1]+dz*f, h=(a[2]||0)+((b[2]||0)-(a[2]||0))*f, gh=th(x,z);
       if(h-gh>2.5&&inT(x,z)&&!nearRoad(x,z,2.5,id)) addBox(mb,x,gh-0.3,z,Math.min(w*0.5,5),h-0.9-(gh-0.3),1.3,[.56,.55,.52],Math.atan2(ux,uz));
+    }
+    carry=t-len;
+  }
+}
+function railBeam(mb,run,off,yb,yt,w,col){
+  const L=offsetLine(run,off), h=w/2;
+  for(let i=0;i<L.length-1;i++){
+    const a=L[i],b=L[i+1],dx=b[0]-a[0],dz=b[1]-a[1],l=Math.hypot(dx,dz); if(l<0.02) continue;
+    const nx=-dz/l*h, nz=dx/l*h, za=a[2]||0, zb=b[2]||0;
+    const A1=[a[0]+nx,yt+za,a[1]+nz],A2=[a[0]-nx,yt+za,a[1]-nz],B1=[b[0]+nx,yt+zb,b[1]+nz],B2=[b[0]-nx,yt+zb,b[1]-nz];
+    mb.quad(A1,A2,B2,B1,col,UP);
+    const d1=[A1[0],yb+za,A1[2]],e1=[B1[0],yb+zb,B1[2]],d2=[A2[0],yb+za,A2[2]],e2=[B2[0],yb+zb,B2[2]];
+    vq(mb,A1,B1,e1,d1,col); vq(mb,A2,B2,e2,d2,col);
+  }
+}
+function tramBed(mb,run){   // шпалы и гравийное ложе под трамвайными путями
+  let carry=0;
+  for(let i=0;i<run.length-1;i++){
+    const a=run[i],b=run[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<0.05) continue;
+    const ux=dx/len,uz=dz/len,nx=-uz,nz=ux; let t=carry;
+    for(;t<len;t+=1.1){
+      const x=a[0]+ux*t,z=a[1]+uz*t,y=0.16+(a[2]||0)+((b[2]||0)-(a[2]||0))*t/len;
+      mb.quad([x-nx*1.25-ux*.12,y,z-nz*1.25-uz*.12],[x+nx*1.25-ux*.12,y,z+nz*1.25-uz*.12],[x+nx*1.25+ux*.12,y,z+nz*1.25+uz*.12],[x-nx*1.25+ux*.12,y,z-nz*1.25+uz*.12],[.56,.56,.57],UP);
     }
     carry=t-len;
   }
@@ -453,7 +490,7 @@ function groundAt(x,z,ref){
   for(let cx=Math.floor((x-r)/CS);cx<=Math.floor((x+r)/CS);cx++)for(let cz=Math.floor((z-r)/CS);cz<=Math.floor((z+r)/CS);cz++){
     const a=roadGrid.get(cx+','+cz); if(!a) continue;
     for(const sg of a){
-      const q=closestOnSeg(x,z,sg); if(Math.hypot(q[0]-x,q[1]-z)>sg.hw+0.6) continue;
+      const q=closestOnSeg(x,z,sg), dd=Math.hypot(q[0]-x,q[1]-z); if(dd>sg.hw+0.6||((q[2]<=0||q[2]>=1)&&dd>2.5)) continue;
       const h=(sg.h1||0)+((sg.h2||0)-(sg.h1||0))*q[2], dh=Math.abs(h-ref); if(dh<bd){bd=dh;best=h;}
     }
   }
@@ -566,7 +603,8 @@ const signCanvas=cv(SG_COLS*SG_CW,SG_ROWS*SG_CH), signCtx=signCanvas.getContext(
 const signTex=new THREE.CanvasTexture(signCanvas); signTex.minFilter=THREE.LinearFilter; signTex.generateMipmaps=false; signTex.anisotropy=4;
 let signDirty=false; const signFree=[]; for(let i=SG_COLS*SG_ROWS-1;i>=0;i--) signFree.push(i);
 const matSign=new THREE.MeshLambertMaterial({vertexColors:true,map:signTex,emissive:0xffffff,emissiveMap:signTex,emissiveIntensity:0.12});
-const SIGN_PAL={food:['#b5361f','#fff3e0'],shop:['#1d5fa8','#ffffff'],health:['#18805a','#ffffff'],money:['#2d7d32','#fffde7'],serv:['#5b3f8f','#ffffff'],other:['#34414f','#f1f4f8']};
+const matTramSign=new THREE.MeshBasicMaterial({map:signTex,transparent:true,opacity:0.5,depthWrite:false,fog:true});
+const SIGN_PAL={tram:['#e0a800','#14171c'],food:['#b5361f','#fff3e0'],shop:['#1d5fa8','#ffffff'],health:['#18805a','#ffffff'],money:['#2d7d32','#fffde7'],serv:['#5b3f8f','#ffffff'],other:['#34414f','#f1f4f8']};
 function signKind(tg){
   const c=String(tg.cls||tg.amenity||tg.shop||tg.tourism||tg.office||tg.craft||'');
   if(/restaurant|cafe|fast_food|bar|pub|bakery|food|ice_cream|coffee|pizza|confectionery/.test(c)) return 'food';
@@ -728,7 +766,9 @@ let busTex=new THREE.CanvasTexture(livCanvas); busTex.anisotropy=8;
 const canvas=$('view');
 const isTouch=matchMedia('(pointer:coarse)').matches||('ontouchstart' in window);
 const renderer=new THREE.WebGLRenderer({canvas,antialias:!isTouch,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,isTouch?1.5:2));
+let PRS=0; const applyPR=()=>{ renderer.setPixelRatio(PRS>0?PRS:Math.min(window.devicePixelRatio||1,isTouch?1.5:2)); };
+let TREEM=1, CAPM=1, SHD=90, EXPO=1;
+
 renderer.setSize(innerWidth,innerHeight,false);
 const scene=new THREE.Scene();
 const DAY={sky:0x9ecbf0,hemi:0.9,sun:0.85,ground:0x86996f}, NIGHT={sky:0x0a0f1e,hemi:0.28,sun:0.08,ground:0x2a3126};
@@ -767,8 +807,8 @@ function applyTime(){
   sunDir.set(cosE*Math.sin(sp.A),sinE,-cosE*Math.cos(sp.A));
   const k=sstep(-0.05,0.25,sinE), kd=sstep(-0.14,0.2,sinE);
   busEmI=0.08+0.17*(1-kd); for(const m of busMats) m.emissiveIntensity=busEmI;
-  sun.intensity=0.95*k; sun.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.45,sinE));
-  hemi.intensity=0.25+0.68*kd; hemi.color.copy(C_HEMI_NIGHT).lerp(C_HEMI_DAY,kd); hemi.groundColor.copy(C_GRD_NIGHT).lerp(C_GRD_DAY,kd);
+  sun.intensity=0.95*k*EXPO; sun.color.copy(C_SUN_LOW).lerp(C_SUN_HIGH,sstep(0.02,0.45,sinE));
+  hemi.intensity=(0.25+0.68*kd)*EXPO; hemi.color.copy(C_HEMI_NIGHT).lerp(C_HEMI_DAY,kd); hemi.groundColor.copy(C_GRD_NIGHT).lerp(C_GRD_DAY,kd);
   const tw=Math.exp(-Math.pow(sp.E*57.2958/8,2))*0.6;
   skyC.copy(C_SKY_NIGHT).lerp(C_SKY_DAY,kd).lerp(C_SKY_TW,tw); scene.background.copy(skyC); scene.fog.color.copy(skyC);
   const dark=sinE<0.07; if(dark!==isDark){ isDark=dark; headL.visible=headR.visible=dark; }
@@ -777,7 +817,7 @@ function applyTime(){
   sun.castShadow=shadowsOn&&sinE>0.04;
 }
 function toggleNight(){ tod=(tod>=6&&tod<18)?0:12; $('tod').value=tod; }
-addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+addEventListener('resize',()=>{ applyPR(); renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 
 /* =====================  ЭФФЕКТЫ ОСВЕЩЕНИЯ (постобработка; всё выключено по умолчанию)  ===================== */
 const FX={ao:false,bloom:false,rays:false,vig:false,fxaa:false,haze:false,shq:false};
@@ -933,7 +973,7 @@ function updFog(){
   sunDisc.scale.setScalar(skyR/2000); stars.scale.setScalar(skyR*1.15/2300);
 }
 function applyShadowQ(){
-  const ms=FX.shq?4096:(isTouch?1024:2048), e=FX.shq?140:90; sun.shadow.mapSize.set(ms,ms);
+  const ms=FX.shq?4096:(isTouch?1024:2048), e=SHD*(FX.shq?1.55:1); sun.shadow.mapSize.set(ms,ms);
   if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; }
   const sc=sun.shadow.camera; sc.left=-e; sc.right=e; sc.top=e; sc.bottom=-e; sc.updateProjectionMatrix();
 }
@@ -1202,7 +1242,8 @@ async function setVehicle(k){
   livCanvas.width=NW; livCanvas.height=NH; drawLiveryFor(livCanvas.getContext('2d')); const t=new THREE.CanvasTexture(livCanvas); t.anisotropy=8; setBusTexture(t);
   for(const [h,sx] of [[headL,0.32*BW],[headR,-0.32*BW]]){ h.position.set(sx,BH*V.lamp,HL); h.target.position.set(sx,0,HL+30); }
   const hx=HX-0.1, hl=HL-0.1; CPTS=[[hx,hl],[-hx,hl],[hx,-hl],[-hx,-hl],[hx,0],[-hx,0],[0,hl],[0,-hl],[hx,hl/2],[-hx,hl/2],[hx,-hl/2],[-hx,-hl/2]];
-  camDist=V.dist; snapCam=true; tr.on=false; tr.want=false; tr.pref='S'; if(k==='tram') setTimeout(openSpawn,300); else closeSpawn();
+  camDist=V.dist; snapCam=true; for(const t of tiles.values()) if(t.tsMesh) t.tsMesh.visible=(k==='tram');
+  tr.on=false; tr.want=false; tr.pref='S'; if(k==='tram') setTimeout(openSpawn,300); else closeSpawn();
   if(tok===vehTok) await restoreBus();
 }
 $('veh').addEventListener('change',e=>{ setVehicle(e.target.value); e.target.blur(); });
@@ -1342,8 +1383,8 @@ function swHud(){
       dist+=Math.hypot(c[0].x-node.x,c[0].z-node.z); prev=node; node=c[0];
     }
     if(jn){ const ch=chooseNext(jn.prev,jn.node,tr.pref); t='Развилка через '+Math.round(jn.dist)+' м · стрелка: '+sel;
-      if(ch){ if(!swArrow){ swArrow=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(),5,0x2ecc71,1.8,1.3); scene.add(swArrow); }
-        const dx=ch.x-jn.node.x, dz=ch.z-jn.node.z, l=Math.hypot(dx,dz)||1; swArrow.position.set(jn.node.x,th(jn.node.x,jn.node.z)+3.2,jn.node.z); swArrow.setDirection(new THREE.Vector3(dx/l,0,dz/l)); swArrow.setColor(tr.pref==='S'?0x2ecc71:0xffd24a); show=true; } }
+      if(ch){ if(!swArrow){ swArrow=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(),4,0x2ecc71,0.9,0.6); scene.add(swArrow); }
+        const dx=ch.x-jn.node.x, dz=ch.z-jn.node.z, l=Math.hypot(dx,dz)||1; swArrow.position.set(jn.node.x,th(jn.node.x,jn.node.z)+1.1,jn.node.z); swArrow.setDirection(new THREE.Vector3(dx/l,0,dz/l)); swArrow.setColor(tr.pref==='S'?0x2ecc71:0xffd24a); show=true; } }
     else t='Стрелка: '+sel+' (развилок впереди нет)';
   }
   if(swArrow) swArrow.visible=show;
@@ -1436,7 +1477,7 @@ function overpassQuery(t){
   `way["landuse"~"^(grass|forest|meadow|recreation_ground|village_green|cemetery|orchard|reservoir|basin|farmland|allotments)$"];`+
   `way["natural"~"^(wood|scrub|water|grassland|heath|wetland|beach|sand)$"];`+
   `way["waterway"~"^(river|canal|stream)$"];`+
-  `node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];node["public_transport"="platform"]["bus"="yes"];`+
+  `node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];node["railway"="tram_stop"];node["public_transport"="platform"]["bus"="yes"];`+
   `way["barrier"="fence"];way["amenity"="parking"];way["landuse"~"^(industrial|garages)$"];`+
   `node["name"]["shop"];node["name"]["amenity"];node["name"]["tourism"];node["name"]["office"];node["name"]["craft"];`+
   `);out geom;`;
@@ -1541,7 +1582,7 @@ function mapMvt(layer,p,type){
   case 'poi':{
     if(p.class==='bus'&&p.subclass==='bus_stop') return {t:{highway:'bus_stop',name:p.name||p['name:ru']||p['name:latin']||''},k:'point'};
     const nm=p['name:ru']||p.name||p['name:latin']||''; const c=String(p.class||'');
-    if(!nm&&c!=='place_of_worship'&&c!=='monument'&&c!=='castle') return null;
+    if(!nm&&c!=='place_of_worship'&&c!=='monument'&&c!=='castle'&&!(c==='railway'&&p.subclass==='tram_stop')) return null;
     return {t:{_poi:1,cls:c,sub:String(p.subclass||''),name:String(nm)},k:'point'}; }
   }
   return null;
@@ -1659,7 +1700,7 @@ async function fetchVector(t,mode){
 }
 function enrQuery(t){
   const [s,w]=unproj(t.i*S,(t.j+1)*S), [n,e]=unproj((t.i+1)*S,t.j*S);
-  return `[out:json][timeout:20][bbox:${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)}];(node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];way["barrier"="fence"];way["amenity"="parking"];way["landuse"~"^(industrial|garages)$"];node["name"]["shop"];node["name"]["amenity"];node["name"]["tourism"];node["name"]["office"];node["name"]["craft"];);out geom;`;
+  return `[out:json][timeout:20][bbox:${s.toFixed(6)},${w.toFixed(6)},${n.toFixed(6)},${e.toFixed(6)}];(node["natural"="tree"];node["highway"~"^(traffic_signals|bus_stop)$"];node["railway"="tram_stop"];way["barrier"="fence"];way["amenity"="parking"];way["landuse"~"^(industrial|garages)$"];node["name"]["shop"];node["name"]["amenity"];node["name"]["tourism"];node["name"]["office"];node["name"]["craft"];);out geom;`;
 }
 async function enrichTile(t,g){
   enrActive++; t.enrTried=true;
@@ -1884,9 +1925,9 @@ function buildTile(T,data){
   const els=data.elements||[];
   const x0=T.i*S,z0=T.j*S,x1=x0+S,z1=z0+S;
   const inT=(x,z)=>x>=x0&&x<x1&&z>=z0&&z<z1;
-  const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), ba=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true), sgm=new MB(true), am=new MB(true);
+  const vc=new MB(true), fo=new MB(true,0.5), bl=new MB(true), ba=new MB(true), la=new MB(true), lb=new MB(true), lh=new MB(false), gl=new MB(true), sgm=new MB(true), am=new MB(true), tsm=new MB(true);
   const bRec=[];
-  const roadWays=[],railWays=[],nameWays=[],areaWays=[],bldWays=[],waterLines=[],treeNodes=[],sigNodes=[],stopNodes=[],fenceWays=[],poiNodes=[],spPts=[];
+  const roadWays=[],railWays=[],nameWays=[],areaWays=[],bldWays=[],waterLines=[],treeNodes=[],sigNodes=[],stopNodes=[],fenceWays=[],poiNodes=[],spPts=[],tramStopNodes=[];
   T.signSlots=T.signSlots||[]; T.signsTried=T.d<=S*1.6;
   const RAILOK={rail:1,tram:1,light_rail:1,narrow_gauge:1}, isBr=tg=>!!(tg.bridge&&tg.bridge!=='no')||(+tg.layer>=1&&tg.tunnel!=='yes'&&tg.covered!=='yes');
   for(const el of els){
@@ -1896,6 +1937,7 @@ function buildTile(T,data){
       const p=proj(el.lat,el.lon); if(!inT(p[0],p[1])) continue;
       if(tg.natural==='tree') treeNodes.push(p);
       else if(tg.highway==='traffic_signals') sigNodes.push(p);
+      else if(tg.railway==='tram_stop'||(tg._poi&&tg.cls==='railway'&&tg.sub==='tram_stop')) tramStopNodes.push({p,name:tg.name||tg['name:ru']||''});
       else if(tg.highway==='bus_stop'||tg.public_transport==='platform') stopNodes.push({p,name:tg.name||tg['name:ru']||''});
       else if(tg._poi||tg.shop||tg.amenity||tg.tourism||tg.office||tg.craft){
         const cls=String(tg._poi?tg.cls:(tg.shop?'shop':(tg.amenity||tg.tourism||tg.office||tg.craft)));
@@ -1946,6 +1988,27 @@ function buildTile(T,data){
       out.push(P[P.length-1]); r.pts=out;
     }
   }
+  const brCl=new Map();
+  { const items=[];
+    for(const r of roadWays) if(isBr(r.tg)) items.push({r,H:BRH[r.tg.highway]||5.5});
+    for(const r of railWays) if(isBr(r.tg)) items.push({r,H:7});
+    if(items.length>1||items.length===1){
+      const par=items.map((_,i)=>i), find=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
+      const cell=new Map(), CZ=16;
+      items.forEach((it,i)=>{ const P=densify(it.r.pts,8); it.P=P;
+        for(let k=0;k<P.length;k++){
+          const a=P[Math.max(0,k-1)], b=P[Math.min(P.length-1,k+1)], dx=b[0]-a[0], dz=b[1]-a[1], l=Math.hypot(dx,dz)||1, ux=dx/l, uz=dz/l, cx=Math.floor(P[k][0]/CZ), cz=Math.floor(P[k][1]/CZ);
+          for(let i2=cx-1;i2<=cx+1;i2++)for(let j2=cz-1;j2<=cz+1;j2++){ const l2=cell.get(i2+','+j2); if(l2) for(const o of l2){ if(o.i===i) continue; if(Math.abs(o.ux*ux+o.uz*uz)>0.85&&Math.hypot(o.x-P[k][0],o.z-P[k][1])<24) par[find(i)]=find(o.i); } }
+          const key=cx+','+cz; let l3=cell.get(key); if(!l3){ l3=[]; cell.set(key,l3); } l3.push({i,x:P[k][0],z:P[k][1],ux,uz});
+        } });
+      const groups=new Map(); items.forEach((it,i)=>{ const g=find(i); let a=groups.get(g); if(!a){ a=[]; groups.set(g,a); } a.push(it); });
+      for(const mem of groups.values()){
+        let ax=0,az=0,rx=null,rz=null,H=0; for(const it of mem){ const P=it.P, dx=P[P.length-1][0]-P[0][0], dz=P[P.length-1][1]-P[0][1]; if(rx===null){ rx=dx; rz=dz; } const sg=(dx*rx+dz*rz)>=0?1:-1; ax+=dx*sg; az+=dz*sg; if(it.H>H) H=it.H; }
+        const al=Math.hypot(ax,az)||1; ax/=al; az/=al; let smin=1e9,smax=-1e9; for(const it of mem) for(const q of it.P){ const sv=q[0]*ax+q[1]*az; if(sv<smin)smin=sv; if(sv>smax)smax=sv; }
+        const cl={d:[ax,az],smin,smax,H,n:mem.length}; for(const it of mem) brCl.set(it.r,cl);
+      }
+    }
+  }
   const bkey=q=>Math.round(q[0])+','+Math.round(q[1]), bv=new Map();
   for(const r of roadWays){ if(!isBr(r.tg)) continue; const H=BRH[r.tg.highway]||5.5;
     for(const q of r.pts){ const k=bkey(q); let e=bv.get(k); if(!e){ e={ids:new Set(),h:0}; bv.set(k,e); } e.ids.add(r.id); if(H>e.h) e.h=H; } }
@@ -1956,12 +2019,12 @@ function buildTile(T,data){
     const hwT=r.tg.highway, [bw,rank]=ROAD[hwT]; let w=bw;
     const tw=parseFloat(r.tg.width), ln=parseFloat(r.tg.lanes);
     if(rank>=1){ if(tw>2&&tw<30) w=Math.max(tw,3); else if(ln>=1) w=Math.max(w,Math.min(ln,6)*3.3); }
-    const br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,BRH[hwT]||5.5,[jointOf(r,r.pts[0]),jointOf(r,r.pts[r.pts.length-1])]):groundLine(r.pts,12);
+    const br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,BRH[hwT]||5.5,[jointOf(r,r.pts[0]),jointOf(r,r.pts[r.pts.length-1])],brCl.get(r)):groundLine(r.pts,12);
     const y=0.07+rank*0.025, col=roadColor(hwT,rank);
     for(const run of runsOf(P)){
       if(run.length<2) continue;
       const e=ribbon(vc,run,w,y,col);
-      if(br&&e){ bridgeBody(vc,e,[.55,.54,.52],[.70,.69,.66]); bridgePillars(vc,run,w,r.id,inT); }
+      if(br&&e){ const cl0=brCl.get(r); bridgeBody(vc,e,[.55,.54,.52],[.70,.69,.66],cl0&&cl0.n>1?0.3:0.9); bridgePillars(vc,run,w,r.id,inT); }
       if(rank>=3&&w>=7) for(const sg of [-1,1]) ribbon(vc,offsetLine(run,sg*(w/2-0.45)),0.14,y+0.025,[0.88,0.88,0.84]);
       if(data.proc&&rank>=1&&!br) for(let k=0;k<run.length;k++){
         const key=Math.round(run[k][0]*2)+','+Math.round(run[k][1]*2); let v=vtx.get(key);
@@ -2024,7 +2087,7 @@ function buildTile(T,data){
   // --- железная дорога и трамвай ---
   regRailAll(T,railWays);
   for(const r of railWays){
-    const tram=r.tg.railway==='tram'||r.tg.railway==='light_rail', br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,7):groundLine(r.pts,12);
+    const tram=r.tg.railway==='tram'||r.tg.railway==='light_rail', br=isBr(r.tg), P=br?bridgeProfile(r.pts,r.cut,7,null,brCl.get(r)):groundLine(r.pts,12);
     for(const run of runsOf(P)){
       if(run.length<2) continue;
       if(!tram){
@@ -2032,7 +2095,28 @@ function buildTile(T,data){
         if(br&&e){ bridgeBody(vc,e,[.5,.5,.48],[.62,.62,.6]); bridgePillars(vc,run,4,r.id,inT); }
         sleepers(vc,run);
       }
-      for(const sg of [-1,1]) ribbon(vc,offsetLine(run,sg*(tram?0.76:0.72)),0.12,0.25,[.58,.59,.61]);
+      if(tram){
+        if(br){ const e=ribbon(vc,run,3.6,0.09,[.40,.40,.42]); if(e) bridgeBody(vc,e,[.55,.54,.52],[.70,.69,.66],0.25); }
+        ribbon(vc,run,2.9,0.135,[.34,.33,.31]); tramBed(vc,run);
+      }
+      if(br) for(let i=0;i<run.length-1;i++) addSeg({x1:run[i][0],z1:run[i][1],x2:run[i+1][0],z2:run[i+1][1],h1:run[i][2]||0,h2:run[i+1][2]||0,hw:1.7,id:r.id,tk:T.key,rank:1},T);
+      for(const sg of [-1,1]) railBeam(vc,run,sg*(tram?0.76:0.72),tram?0.16:0.12,tram?0.30:0.26,0.11,[.66,.67,.70]);
+    }
+  }
+  // --- трамвайные остановки: прозрачный знак над путями (виден только при езде на трамвае) ---
+  if(tramStopNodes.length){
+    const seenS=[];
+    for(const q of tramStopNodes){
+      if(!inT(q.p[0],q.p[1])||!signFree.length) continue;
+      if(seenS.some(o=>Math.hypot(o[0]-q.p[0],o[1]-q.p[1])<10)) continue;
+      const r=railSnap(q.p[0],q.p[1],14,null); if(!r) continue; seenS.push(q.p);
+      const dx=r.b.x-r.a.x, dz=r.b.z-r.a.z, l=Math.hypot(dx,dz)||1, lx=-dz/l, lz=dx/l, px=r.a.x+dx*r.t, pz=r.a.z+dz*r.t, y=th(px,pz)+5.6, W=3.8, H=1.3;
+      const slot=signFree.pop(); T.signSlots.push(slot); drawSign(slot,q.name||'Трамвай','tram');
+      const col=slot%SG_COLS, row=(slot/SG_COLS)|0, u0=col/SG_COLS+0.0008, u1=(col+1)/SG_COLS-0.0008, vb=1-(row+1)/SG_ROWS+0.0008, vt=1-row/SG_ROWS-0.0008;
+      for(const sgn of [1,-1]){
+        const ux=lx*sgn, uz=lz*sgn, nx=uz, nz=-ux, cx=px+nx*0.03, cz=pz+nz*0.03;
+        tsm.quad([cx+ux*W/2,y-H/2,cz+uz*W/2],[cx-ux*W/2,y-H/2,cz-uz*W/2],[cx-ux*W/2,y+H/2,cz-uz*W/2],[cx+ux*W/2,y+H/2,cz+uz*W/2],[1,1,1],{nrm:[nx,0,nz]},[u0,vb],[u1,vb],[u1,vt],[u0,vt]);
+      }
     }
   }
   // --- здания ---
@@ -2070,35 +2154,38 @@ function buildTile(T,data){
     for(let gx=Math.floor(mnx/CS);gx<=Math.floor(mxx/CS);gx++)for(let gz=Math.floor(mnz/CS);gz<=Math.floor(mxz/CS);gz++) gAdd(bldGrid,gx,gz,item,T,T.bc);
   }
   // --- деревья ---
-  let treeCount=0; const TREECAP=isTouch?700:1500;
+  // индекс путей: деревья и столбы не должны оказываться на рельсах
+  const railSegs=[]; for(const r of railWays){ const hw=(r.tg.railway==='tram'||r.tg.railway==='light_rail')?1.7:2.4; for(let i=0;i<r.pts.length-1;i++){ const a=r.pts[i],b=r.pts[i+1]; railSegs.push({x1:a[0],z1:a[1],x2:b[0],z2:b[1],hw,minx:Math.min(a[0],b[0])-hw-6,maxx:Math.max(a[0],b[0])+hw+6,minz:Math.min(a[1],b[1])-hw-6,maxz:Math.max(a[1],b[1])+hw+6}); } }
+  const nearRail=(x,z,m)=>{ for(const sg of railSegs){ if(x<sg.minx||x>sg.maxx||z<sg.minz||z>sg.maxz) continue; const q=closestOnSeg(x,z,sg); if(Math.hypot(q[0]-x,q[1]-z)<sg.hw+m) return true; } return false; };
+  let treeCount=0; const TREECAP=Math.round((isTouch?700:1500)*TREEM);
   // деревья только внутри парков, лесов, газонов, кладбищ и садов (не вдоль дорог)
   for(const a of areaWays){
     if(!a.st.tree) continue;
     let mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9; for(const q of a.pts){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mnz)mnz=q[1]; if(q[1]>mxz)mxz=q[1]; }
     const ix0=Math.max(mnx,x0),ix1=Math.min(mxx,x1),iz0=Math.max(mnz,z0),iz1=Math.min(mxz,z1); if(ix1<=ix0||iz1<=iz0) continue;
-    const n=Math.min(900,Math.ceil((ix1-ix0)*(iz1-iz0)*a.st.tree)), rng=mulberry32((a.id*31+T.i*7919+T.j*104729)|0);
+    const n=Math.min(Math.round(900*Math.max(1,TREEM)),Math.ceil((ix1-ix0)*(iz1-iz0)*a.st.tree*TREEM)), rng=mulberry32((a.id*31+T.i*7919+T.j*104729)|0);
     for(let k=0;k<n&&treeCount<TREECAP;k++){
       const x=ix0+rng()*(ix1-ix0), z=iz0+rng()*(iz1-iz0);
-      if(!pip(x,z,a.pts)||pointInBuilding(x,z)||nearRoad(x,z,1.8,0)) continue;
+      if(!pip(x,z,a.pts)||pointInBuilding(x,z)||nearRoad(x,z,1.8,0)||nearRail(x,z,1.6)) continue;
       treeCount++; addTree(vc,fo,x,z,rng);
     }
   }
   // --- зима: небольшие сугробы ---
   if(WINTER){
-    let drifts=0; const SNOWCAP=isTouch?260:650, DC=[0.95,0.97,1.0], drng=mulberry32((T.i*7349+T.j*91139+17)|0);
+    let drifts=0; const SNOWCAP=Math.round((isTouch?260:650)*CAPM), DC=[0.95,0.97,1.0], drng=mulberry32((T.i*7349+T.j*91139+17)|0);
     const drift=(x,z,big)=>{ const k=big?1.5:1, y=th(x,z)+0.02; addBlob(vc,x,y,z,(0.5+drng()*0.9)*k,(0.16+drng()*0.2)*k,(0.5+drng()*0.9)*k,DC,drng,0.3); drifts++; };
     for(const a of areaWays){
       if(!a.st.snow) continue;
       let mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9; for(const q of a.pts){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mnz)mnz=q[1]; if(q[1]>mxz)mxz=q[1]; }
       const ix0=Math.max(mnx,x0),ix1=Math.min(mxx,x1),iz0=Math.max(mnz,z0),iz1=Math.min(mxz,z1); if(ix1<=ix0||iz1<=iz0) continue;
       const n=Math.min(120,Math.ceil((ix1-ix0)*(iz1-iz0)/320));
-      for(let k=0;k<n&&drifts<SNOWCAP;k++){ const x=ix0+drng()*(ix1-ix0), z=iz0+drng()*(iz1-iz0); if(!pip(x,z,a.pts)||pointInBuilding(x,z)||nearRoad(x,z,1.3,0)) continue; drift(x,z,false); }
+      for(let k=0;k<n&&drifts<SNOWCAP;k++){ const x=ix0+drng()*(ix1-ix0), z=iz0+drng()*(iz1-iz0); if(!pip(x,z,a.pts)||pointInBuilding(x,z)||nearRoad(x,z,1.3,0)||nearRail(x,z,1.0)) continue; drift(x,z,false); }
     }
     for(const L of lampRuns){
       if(L.br||L.rank>3) continue; const run=L.run; let acc=0, next=3+drng()*10;
       for(let i=0;i<run.length-1&&drifts<SNOWCAP;i++){
         const a=run[i],b=run[i+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz); if(len<0.5) continue; const ux=dx/len,uz=dz/len;
-        while(next<=acc+len&&drifts<SNOWCAP){ const t=(next-acc)/len, sg=drng()<0.5?-1:1, px=a[0]+dx*t-uz*sg*(L.hw+0.9+drng()*0.7), pz=a[1]+dz*t+ux*sg*(L.hw+0.9+drng()*0.7); next+=9+drng()*14; if(inT(px,pz)&&!pointInBuilding(px,pz)&&!nearRoad(px,pz,0.5,L.id)) drift(px,pz,true); }
+        while(next<=acc+len&&drifts<SNOWCAP){ const t=(next-acc)/len, sg=drng()<0.5?-1:1, px=a[0]+dx*t-uz*sg*(L.hw+0.9+drng()*0.7), pz=a[1]+dz*t+ux*sg*(L.hw+0.9+drng()*0.7); next+=9+drng()*14; if(inT(px,pz)&&!pointInBuilding(px,pz)&&!nearRoad(px,pz,0.5,L.id)&&!nearRail(px,pz,0.5)) drift(px,pz,true); }
         acc+=len;
       }
     }
@@ -2113,7 +2200,7 @@ function buildTile(T,data){
     const hard=(x,z,m)=>{ const cx0=Math.floor(x/CS), cz0=Math.floor(z/CS);
       for(let cx=cx0-1;cx<=cx0+1;cx++)for(let cz=cz0-1;cz<=cz0+1;cz++){ const l=SI.get(cx+','+cz); if(!l) continue; for(const sg of l){ const q=closestOnSeg(x,z,sg); if(Math.hypot(q[0]-x,q[1]-z)<sg.hw+m) return true; } }
       return nearRoad(x,z,m,0); };
-    const FC=[0.30,0.33,0.32]; let segs=0; const FCAP=isTouch?220:500;
+    const FC=[0.30,0.33,0.32]; let segs=0; const FCAP=Math.round((isTouch?220:500)*CAPM);
     for(const f of fenceWays){
       const P=densify(f.pts,0.4); let L=0; const D=[0]; for(let i=1;i<P.length;i++){ L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]); D.push(L); }
       if(L<1.5) continue;
@@ -2170,7 +2257,7 @@ function buildTile(T,data){
     }
   }
   // --- уличные фонари вдоль автомобильных дорог ---
-  { let lampCount=0; const LAMPCAP=isTouch?260:520, GH=[0.35,0.37,0.4], HC=[0.9,0.9,0.85], WH=[1,1,1];
+  { let lampCount=0; const LAMPCAP=Math.round((isTouch?260:520)*CAPM), GH=[0.35,0.37,0.4], HC=[0.9,0.9,0.85], WH=[1,1,1];
     for(const L of lampRuns){
       const step=L.rank>=5?40:L.rank>=3?34:30, both=L.rank>=4, run=L.run, off=L.br?Math.max(0.4,L.hw-0.4):L.hw+1.3, H=L.rank>=4?9:7;
       let acc=0, next=10+((L.id|0)%7), n=0;
@@ -2182,7 +2269,7 @@ function buildTile(T,data){
           const sides=both?[-1,1]:[(n&1)?1:-1]; n++; next+=step;
           for(const sg of sides){
             const px=cx+nx*sg*off, pz=cz+nz*sg*off; if(!inT(px,pz)||pointInBuilding(px,pz)) continue;
-            if(!L.br&&nearRoad(px,pz,0.9,L.id)) continue;
+            if((!L.br&&nearRoad(px,pz,0.9,L.id))||nearRail(px,pz,0.9)) continue;
             const gy=(L.br?deck+0.15:th(px,pz))-0.05, ax=-nx*sg, az=-nz*sg, rot=Math.atan2(ax,az);
             addBox(vc,px,gy,pz,0.16,H,0.16,GH,0);
             addBox(vc,px+ax*0.9,gy+H-0.12,pz+az*0.9,0.1,0.1,1.9,GH,rot);
@@ -2227,6 +2314,7 @@ function buildTile(T,data){
           ribbon(vc,[[ax,az,th(ax,az)],[bx,bz,th(bx,bz)]],0.5,yy,[.9,.9,.87]);
         }
       } }
+    if(nearRail(r.px,r.pz,0.8)) continue;
     addBox(vc,r.px,gy,r.pz,0.16,5.2,0.16,[0.35,0.36,0.38],0);
     addBox(vc,r.px,hy-0.75,r.pz,0.46,1.5,0.46,headCol,r.ang);
     const sa=Math.sin(r.ang),ca=Math.cos(r.ang);
@@ -2243,6 +2331,7 @@ function buildTile(T,data){
   // --- остановки ---
   for(const st of stopNodes){
     const r=roadSide(st.p,1.2), gy=th(r.px,r.pz), sa=Math.sin(r.ang),ca=Math.cos(r.ang);
+    if(nearRail(r.px,r.pz,0.8)||nearRail(r.px+r.nx*1.7,r.pz+r.nz*1.7,1.8)){ T.stops.push({x:st.p[0],z:st.p[1],name:st.name}); continue; }
     addBox(vc,r.px,gy,r.pz,0.1,3.0,0.1,[0.4,0.42,0.45],0);
     addBox(vc,r.px,gy+2.45,r.pz,0.55,0.55,0.05,[0.12,0.42,0.78],r.ang);
     addBox(vc,r.px,gy+2.62,r.pz,0.34,0.2,0.07,[1,1,1],r.ang);
@@ -2255,8 +2344,8 @@ function buildTile(T,data){
   }
   // --- сборка ---
   const g=new THREE.Group();
-  for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[ba.mesh(matBldAlt),1],[sgm.mesh(matSign),0],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0],[am.mesh(matArea),0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
-  T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; T.areaMesh=g.children.find(m=>m.material===matArea)||null; if(satEnabled&&terrMesh&&T.d<=S*SATR){ T.satT=performance.now(); loadSat(T,terrMesh); }
+  for(const [m,cast] of [[vc.mesh(matVC),1],[fo.mesh(matFoliage),1],[bl.mesh(matBld),1],[ba.mesh(matBldAlt),1],[sgm.mesh(matSign),0],[tsm.mesh(matTramSign),0],[la.mesh(matLampA),0],[lb.mesh(matLampB),0],[lh.mesh(matLampHead),0],[gl.mesh(matGlow),0],[terrMesh,0],[am.mesh(matArea),0]]) if(m){ m.castShadow=!!cast; m.receiveShadow=true; g.add(m); }
+  T.group=g; scene.add(g); T.state='built'; T.terrMesh=terrMesh; T.areaMesh=g.children.find(m=>m.material===matArea)||null; T.tsMesh=g.children.find(m=>m.material===matTramSign)||null; if(T.tsMesh){ T.tsMesh.renderOrder=6; T.tsMesh.visible=(VK==='tram'); } if(satEnabled&&terrMesh&&T.d<=S*SATR){ T.satT=performance.now(); loadSat(T,terrMesh); }
 }
 
 /* =====================  ТЕЛЕПОРТ / КООРДИНАТЫ  ===================== */
@@ -2444,7 +2533,7 @@ function updateCamera(dt){
     camera.position.set(bus.x,camDist*5+30+bus.y,bus.z); camera.up.set(sh,0,ch); camera.lookAt(bus.x,bus.y,bus.z);
   }else{
     const lx=CAMOFF[0],lz=CAMOFF[2];
-    camera.position.set(bus.x+lx*ch+lz*sh,CAMOFF[1]+bus.y,bus.z-lx*sh+lz*ch);
+    camera.position.set(bus.x+lx*ch+lz*sh,CAMOFF[1]+bus.y+(VK==='tram'?0.3:0),bus.z-lx*sh+lz*ch);
     const yaw=bus.h+camYaw*0.6; camera.up.set(0,1,0); camera.lookAt(camera.position.x+Math.sin(yaw)*20,camera.position.y+0.65-camPitch*3,camera.position.z+Math.cos(yaw)*20);
   }
   snapCam=false;
@@ -2454,7 +2543,7 @@ function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),0.05); t0+=dt;
   try{ physics(dt); }catch(e){ setStatus('Ошибка физики: '+(e&&e.message)); }
-  busGroup.position.set(bus.x,0.05+bus.y,bus.z); busGroup.rotation.y=bus.h; busGroup.rotation.x=-bus.pitch; busGroup.rotation.z=bus.roll;
+  busGroup.position.set(bus.x,0.05+bus.y+(VK==='tram'?0.3:0),bus.z); busGroup.rotation.y=bus.h; busGroup.rotation.x=-bus.pitch; busGroup.rotation.z=bus.roll;
   ground.position.set(bus.x,terrMinH-1,bus.z); groundTex.offset.x=((bus.x-2500)/10)%1; groundTex.offset.y=((-bus.z-2500)/10)%1;
   if(todSpeed>0){ tod=(tod+dt*todSpeed/3600)%24; }
   applyTime();
@@ -2503,6 +2592,11 @@ function animate(){
 /* =====================  СОХРАНЕНИЕ НАСТРОЕК  ===================== */
 $('freecam').addEventListener('change',e=>{ setCamMode(e.target.checked?3:0); e.target.blur(); });
 $('fcspeed').addEventListener('input',e=>{ fcSpeed=+e.target.value; $('fcspeedl').textContent=Math.round(fcSpeed)+' м/с'; });
+$('treed').addEventListener('change',()=>{ TREEM=+$('treed').value; rebuildAll(); $('treed').blur(); });
+$('objd').addEventListener('change',()=>{ CAPM=+$('objd').value||1; rebuildAll(); $('objd').blur(); });
+$('rscale').addEventListener('change',()=>{ PRS=+$('rscale').value||0; applyPR(); renderer.setSize(innerWidth,innerHeight,false); $('rscale').blur(); });
+$('shdist').addEventListener('change',()=>{ SHD=+$('shdist').value||90; applyShadowQ(); $('shdist').blur(); });
+$('expo').addEventListener('input',e=>{ EXPO=+e.target.value; });
 $('camfov').addEventListener('input',e=>{ camera.fov=+e.target.value; camera.updateProjectionMatrix(); $('fovl').textContent=Math.round(camera.fov)+'°'; });
 const SKEY='osmbus.settings.v1', PSKIP=new Set(['tod','file','modelfile','coord','preset','freecam','route']), NOEV=new Set(['src','sgurl']);
 const keyOf=e=>e.id||(e.dataset&&e.dataset.fx?'fx.'+e.dataset.fx:null);
@@ -2613,7 +2707,7 @@ function toggleUI(){ const h=document.body.classList.toggle('nui'); if(rt.segs.l
 $('hideui').addEventListener('click',()=>{ toggleUI(); $('hideui').blur(); });
 addEventListener('keydown',e=>{ if(e.code==='KeyH'&&!(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) toggleUI(); });
 /* =====================  СТАРТ  ===================== */
-window.__dbg={swHud,physics,spawnAt,openSpawn,drawSpawn,sp,tr,RG,railSnap,tramStep,tramMaint,pickNext,turnAround,bus,keys,setWinter:v=>{WINTER=v;},signSlots:()=>signFree.length,setVehicle,parseCamTxt,templateObj,templateReadme,VEHS,drawMini,rt,demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
+window.__dbg={groundAt,swHud,physics,spawnAt,openSpawn,drawSpawn,sp,tr,RG,railSnap,tramStep,tramMaint,pickNext,turnAround,bus,keys,setWinter:v=>{WINTER=v;},signSlots:()=>signFree.length,setVehicle,parseCamTxt,templateObj,templateReadme,VEHS,drawMini,rt,demProcess,demProc,mapGeneric,mvtToElements,gunzipIfNeeded,th,relief,reliefAbs,demData,buildTerrainMesh,setDemBase:v=>{demBase=v;nodeMemo.clear();},nearestName,groundAt,bridgeProfile,nameGrid,rev,decodeMVT,mvtToElements,clipRect,buildTile,teleport,parseCoords,tiles,bus,scene,roadGrid,bldGrid,setOrigin,proj,unproj,ensureTiles,busGeometry,S};
 {
   restoreSettings(); if(!window.__vehRestored) restoreBus();
   let start=null; const h=location.hash.replace('#',''); if(h){ start=parseCoords(h); }
