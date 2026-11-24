@@ -2648,6 +2648,8 @@ $('panel').addEventListener('change',saveSettings); $('panel').addEventListener(
 
 /* =====================  ОНЛАЙН (WebRTC / PeerJS)  ===================== */
 const MP={peer:null,host:false,code:'',conns:new Map(),hostConn:null,players:new Map(),myId:'',timer:0,tTime:0};
+const MPICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:global.stun.twilio.com:3478']},
+  {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}],iceCandidatePoolSize:4};
 const mpEl=$('mpinfo'), mpSay=t=>{ mpEl.textContent=t; };
 const MPCH='ABCDEFGHJKMNPQRSTUVWXYZ23456789', mpNewCode=()=>Array.from({length:6},()=>MPCH[(Math.random()*MPCH.length)|0]).join('');
 function mpLoadLib(){ return new Promise((res,rej)=>{ if(window.Peer) return res(); const urls=['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
@@ -2706,7 +2708,7 @@ async function mpHost(){
   try{ await mpLoadLib(); }catch(e){ mpUI(false); return mpSay('Онлайн недоступен: '+e.message); }
   for(let tryN=0;tryN<4;tryN++){
     const code=mpNewCode();
-    const ok=await new Promise(res=>{ const peer=new Peer('osmbus3d-'+code); let fin=false; const done=v=>{ if(!fin){ fin=true; res(v?peer:null); } };
+    const ok=await new Promise(res=>{ const peer=new Peer('osmbus3d-'+code,{config:MPICE}); let fin=false; const done=v=>{ if(!fin){ fin=true; res(v?peer:null); } };
       peer.on('open',()=>done(true)); peer.on('error',e=>{ if(!fin) done(false); else mpSay('Ошибка соединения: '+(e&&e.type||e)); }); setTimeout(()=>done(false),9000); });
     if(!ok) continue;
     MP.peer=ok; MP.host=true; MP.code=code; MP.myId=ok.id;
@@ -2723,11 +2725,11 @@ async function mpJoin(){
   const code=($('mpcode').value||'').trim().toUpperCase(); if(code.length<4) return mpSay('Введите код комнаты.');
   mpUI(true); mpSay('Подключаюсь…');
   try{ await mpLoadLib(); }catch(e){ mpUI(false); return mpSay('Онлайн недоступен: '+e.message); }
-  const peer=new Peer(); MP.peer=peer; MP.host=false; MP.code=code;
+  const peer=new Peer(undefined,{config:MPICE}); MP.peer=peer; MP.host=false; MP.code=code;
   let opened=false; const fail=t=>{ if(!opened) mpLeave(t); };
   peer.on('error',e=>{ if(!opened) fail(e&&e.type==='peer-unavailable'?'Комната с таким кодом не найдена.':'Ошибка: '+(e&&e.type||e)); });
   peer.on('open',id=>{ MP.myId=id; const c=peer.connect('osmbus3d-'+code,{reliable:true}); MP.hostConn=c;
-    setTimeout(()=>fail('Хост не отвечает.'),12000);
+    setTimeout(()=>{ if(!opened){ let st=''; try{ st=' (ICE: '+c.peerConnection.iceConnectionState+')'; }catch(e){} fail('Хост не отвечает'+st+'. Проверьте код и что хост ещё в комнате; при разных сетях нужен TURN-сервер.'); } },30000);
     c.on('open',()=>{ opened=true; mpUI(true); mpCount(); mpStart(); });
     c.on('data',m=>mpHandle(m,c)); c.on('close',()=>mpLeave('Хост закрыл комнату.')); c.on('error',()=>fail('Ошибка соединения.')); });
 }
